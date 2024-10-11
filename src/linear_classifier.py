@@ -6,12 +6,11 @@ import torch.nn.functional as F
 
 
 class Trainer:
-    def __init__(self, model, model_path, logs_path, optimizer, logger, limit_batches=2, reg=False):
+    def __init__(self, model, optimizer, logger, device, limit_batches=2, reg=False):
         self.model = model
-        self.model_path = model_path
-        self.logs_path = logs_path
         self.optimizer = optimizer
         self.logger = logger
+        self.device = device
         self.limit_batches = limit_batches
         self.reg = reg
 
@@ -24,7 +23,12 @@ class Trainer:
             self.logger.log_model(self.model, epoch)
             print(f"Epoch: {epoch}")
 
-    def _forward(self, x, y):
+    def _forward(self, batch):
+        x, y = batch
+        x = x.to(self.device)
+        y = y.to(self.device)
+        self.model = self.model.to(self.device)
+
         logits = self.model(x)
         forward_loss = F.cross_entropy(logits, y)
         reg_loss = 0.0
@@ -45,13 +49,13 @@ class Trainer:
 
         return accuracy
 
-    def train(self, train_dataloader, epoch, limit_batches):
-        for i, (x, y) in enumerate(train_dataloader):
-            if (limit_batches is not None):
-                if (i > limit_batches):
+    def train(self, train_dataloader, epoch):
+        for i, batch in enumerate(train_dataloader):
+            if (self.limit_batches is not None):
+                if (i > self.limit_batches):
                     break
 
-            loss, acc = self._forward(x, y)
+            loss, acc = self._forward(batch)
             self.logger.log_metric(loss.item(), "train_loss", epoch)
             self.logger.log_metric(acc.item(), "train_accuracy", epoch)
 
@@ -61,14 +65,14 @@ class Trainer:
             self.optimizer.step()
 
     @torch.no_grad()
-    def val(self, val_dataloader, epoch, limit_batches):
+    def val(self, val_dataloader, epoch):
 
-        for i, (x, y) in enumerate(val_dataloader):
-            if (limit_batches is not None):
-                if (i > limit_batches):
+        for i, batch in enumerate(val_dataloader):
+            if (self.limit_batches is not None):
+                if (i > self.limit_batches):
                     break
 
-            loss, acc = self._forward(x, y)
+            loss, acc = self._forward(batch)
             self.logger.log_metric(loss.item(), "val_loss", epoch)
             self.logger.log_metric(acc.item(), "val_accuracy", epoch)
 
