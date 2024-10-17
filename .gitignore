@@ -3,3 +3,6 @@ data/
 .vscode/
 logs/
 reference/
+wandb/
+artifacts/
+.venv/

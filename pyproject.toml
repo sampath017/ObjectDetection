@@ -13,6 +13,8 @@ pandas = "^2.2.3"
 dlflow = {git = "https://github.com/sampath017/dlflow.git"}
 jupyter = "^1.1.1"
 notebook = "^7.2.2"
+wandb = "^0.18.3"
+kaggle = "^1.6.17"
 
 
 [build-system]
