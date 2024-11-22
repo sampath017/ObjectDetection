@@ -1,65 +1,103 @@
+import torch.nn.functional as F
 from torch import nn
 
 
-class ResidualBlock(nn.Module):
-    def __init__(self, num_channels):
-        super().__init__()
-        self.res_block = nn.Sequential(
-            nn.Conv2d(in_channels=num_channels, out_channels=num_channels,
-                      kernel_size=(3, 3), stride=1, padding=1),
-            nn.BatchNorm2d(num_features=num_channels),
-            nn.ReLU(),
-
-            nn.Conv2d(in_channels=num_channels, out_channels=num_channels,
-                      kernel_size=(3, 3), stride=1, padding=1),
-            nn.BatchNorm2d(num_features=num_channels),
-            nn.ReLU()
-        )
-
-    def forward(self, x):
-        logits = self.res_block(x) + x
-
-        return logits
-
-
-class ResNet(nn.Module):
+class VGGNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.feature_extractor = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=64,
-                      kernel_size=(3, 3), stride=1, padding=1),
-            nn.BatchNorm2d(num_features=64),
+            nn.Conv2d(
+                in_channels=3,
+                out_channels=8,
+                kernel_size=(3, 3),
+                stride=1,
+                padding=1
+            ),
+            nn.BatchNorm2d(num_features=8),
             nn.ReLU(),
+            nn.MaxPool2d(kernel_size=(2, 2), stride=2),
 
-            nn.Conv2d(in_channels=64, out_channels=128,
-                      kernel_size=(3, 3), stride=1, padding=1),
-            nn.BatchNorm2d(num_features=128),
+            nn.Conv2d(
+                in_channels=8,
+                out_channels=8,
+                kernel_size=(3, 3),
+                stride=1,
+                padding=1
+            ),
+            nn.BatchNorm2d(num_features=8),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2), padding=(0, 0)),
+            nn.MaxPool2d(kernel_size=(2, 2), stride=2),
 
-            ResidualBlock(128),
-
-            nn.Conv2d(in_channels=128, out_channels=256,
-                      kernel_size=(3, 3), stride=1, padding=1),
-            nn.BatchNorm2d(num_features=256),
+            nn.Conv2d(
+                in_channels=8,
+                out_channels=8,
+                kernel_size=(3, 3),
+                stride=1,
+                padding=1
+            ),
+            nn.BatchNorm2d(num_features=8),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2), padding=(0, 0)),
+            nn.MaxPool2d(kernel_size=(2, 2), stride=2),
 
-            nn.Conv2d(in_channels=256, out_channels=512,
-                      kernel_size=(3, 3), stride=1, padding=1),
-            nn.BatchNorm2d(num_features=512),
+            nn.Conv2d(
+                in_channels=8,
+                out_channels=8,
+                kernel_size=(3, 3),
+                stride=1,
+                padding=1
+            ),
+            nn.BatchNorm2d(num_features=8),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2), padding=(0, 0)),
-
-            ResidualBlock(512),
-
-            nn.MaxPool2d(kernel_size=(4, 4), stride=(4, 4), padding=(0, 0)),
+            nn.MaxPool2d(kernel_size=(2, 2), stride=2),
         )
 
-        self.classifier = nn.Linear(512, 10)
+        self.classifier = nn.Sequential(
+            nn.Linear(32, 100),
+        )
 
     def forward(self, x):
         features = self.feature_extractor(x).flatten(start_dim=1)
         logits = self.classifier(features)
 
         return logits
+
+
+class QuickModule:
+    def __init__(self):
+        pass
+
+    def log(self, metric, metric_name):
+        self.logger.log(metric_name, metric)
+
+
+class VGGNetModule(QuickModule):
+    def __init__(self, model):
+        self.model = model
+
+    def forward(self, batch):
+        x, y = batch
+        x = x.to(self.device)
+        y = y.to(self.device)
+
+        logits = self.model(x)
+        loss = F.cross_entropy(logits, y)
+        accuracy = self._accuracy(logits, y)
+
+        return loss, accuracy
+
+    def training_step(self, batch):
+        loss, acc = self.forward(batch)
+
+        self.log("train_loss", loss)
+        self.log("train_accuracy", acc)
+
+        return loss
+
+    def validation_step(self, batch):
+
+        loss, acc = self.forward(batch)
+
+        self.log("val_loss", loss)
+        self.log("val_accuracy", acc)
+
+        return loss

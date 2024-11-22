@@ -1,23 +1,55 @@
 import torch
 import wandb
 import torch.nn.functional as F
-from module import ResNet
+from torch.utils.data import DataLoader
+from module import VGGNet
 from pathlib import Path
+from callbacks import OverfitCallback
+from utils import accuracy
 
 
 class Trainer:
-    def __init__(self, model=None, config=None, optimizer=None, lr_scheduler=None, device=None, limit_batches=2):
+    def __init__(
+        self,
+        model=None,
+        logger=None,
+        optimizer=None,
+        callbacks=[],
+        logs_path=None,
+        lr_scheduler=None,
+        device=None,
+        limit_train_batches=None,
+        limit_val_batches=None
+    ):
         if model:
             self.model = model.to(device)
 
-        self.config = config
+        self.logger = logger
         self.optimizer = optimizer
+        self.callbacks = callbacks
         self.lr_scheduler = lr_scheduler
         self.device = device
-        self.limit_batches = limit_batches
+        self.limit_train_batches = limit_train_batches
+        self.limit_val_batches = limit_val_batches
+        self.logs_path = logs_path
+
+    def overfit_callback(self):
+        for callback in self.callbacks:
+            if isinstance(callback, OverfitCallback):
+                return callback
 
     def fit(self, train_dataloader, val_dataloader):
-        epochs = self.config["epochs"]
+        self.logger.init()
+        epochs = self.logger.config["epochs"]
+
+        # Overfit callback
+        train_dataloader = DataLoader(
+            train_dataloader.dataset, batch_size=train_dataloader.batch_size, shuffle=False)
+        callback = self.overfit_callback()
+        if callback:
+            self.limit_train_batches = callback.limit_train_batches
+            self.limit_val_batches = callback.limit_val_batches
+
         for epoch in range(epochs):
             self.epoch = epoch
             epoch_train_accuracy = self.train(train_dataloader)
@@ -36,34 +68,27 @@ class Trainer:
 
         logits = self.model(x)
         loss = F.cross_entropy(logits, y)
-        accuracy = self._accuracy(logits, y)
+        acc = accuracy(logits, y)
 
-        return loss, accuracy
-
-    @torch.no_grad()
-    def _accuracy(self, logits, y):
-        probs = F.softmax(logits, dim=-1)
-        y_pred = probs.argmax(dim=-1)
-        accuracy = 100 * ((y_pred == y).sum() / y_pred.shape[0])
-
-        return accuracy
+        return loss, acc
 
     def train(self, train_dataloader):
         step_train_losses = []
         step_train_accuracies = []
+
         self.model.train()
-        for i, batch in enumerate(train_dataloader):
-            if (self.limit_batches is not None):
-                if (i > self.limit_batches):
-                    break
+        for step, batch in enumerate(train_dataloader):
+            if self.limit_train_batches and (step > self.limit_train_batches):
+                break
 
             loss, accuracy = self._forward(batch)
             step_train_losses.append(loss.item())
             step_train_accuracies.append(accuracy.item())
             wandb.log({
-                "lr": self.lr_scheduler.get_last_lr()[0],
-                "train_loss": loss.item(),
-                "train_accuracy": accuracy.item(),
+                "step": step,
+                # "lr": self.lr_scheduler.get_last_lr()[0],
+                "step_train_loss": loss.item(),
+                "step_train_accuracy": accuracy.item(),
             })
 
             # optimization
@@ -71,7 +96,9 @@ class Trainer:
             loss.backward()
             self.optimizer.step()
 
-            self.lr_scheduler.step()
+            # lr_scheduler step
+            if self.lr_scheduler:
+                self.lr_scheduler.step()
 
         epoch_train_loss = torch.tensor(step_train_losses).mean()
         epoch_train_accuracy = torch.tensor(step_train_accuracies).mean()
@@ -88,11 +115,11 @@ class Trainer:
     def val(self, val_dataloader):
         step_val_losses = []
         step_val_accuracies = []
+
         self.model.eval()
-        for i, batch in enumerate(val_dataloader):
-            if (self.limit_batches is not None):
-                if (i > self.limit_batches):
-                    break
+        for step, batch in enumerate(val_dataloader):
+            if self.limit_val_batches and (step > self.limit_val_batches):
+                break
 
             loss, accuracy = self._forward(batch)
             step_val_losses.append(loss.item())
@@ -117,6 +144,7 @@ class Trainer:
     def test(self, test_dataloader):
         step_test_losses = []
         step_test_accuracies = []
+
         self.model.eval()
         for batch in test_dataloader:
             loss, accuracy = self._forward(batch)
@@ -137,11 +165,11 @@ class Trainer:
         local_path = artifact.download()
         file_name = artifact.file().split("/")[-1]
 
-        self.model = ResNet()
+        self.model = VGGNet()
         self.model.load_state_dict(torch.load(
             Path(local_path)/file_name, map_location=self.device))
 
     def log_model(self):
-        model_path = f"model_{self.epoch}.pt"
+        model_path = self.logs_path / f"model_{self.epoch}.pt"
         torch.save(self.model.state_dict(), model_path)
         wandb.log_model(model_path, aliases=[f"[epoch-{self.epoch}]"])
