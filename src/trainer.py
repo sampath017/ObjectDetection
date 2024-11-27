@@ -12,62 +12,82 @@ class Trainer:
         self,
         module=None,
         logger=None,
-        optimizer=None,
         callbacks=[],
         logs_path=None,
         lr_scheduler=None,
         device=None,
         limit_train_batches=None,
-        limit_val_batches=None
+        limit_val_batches=None,
+        fast_dev_run=False
     ):
         self.module = module
         self.module.device = device
         self.module.logger = logger
 
         self.logger = logger
-        self.optimizer = optimizer
+        self.optimizer = module.optimizer()
         self.callbacks = callbacks
         self.lr_scheduler = lr_scheduler
         self.device = device
         self.limit_train_batches = limit_train_batches
         self.limit_val_batches = limit_val_batches
         self.logs_path = logs_path
+        self.fast_dev_run = fast_dev_run
 
-    def overfit_callback(self):
+    def setup(self):
+        # Fast dev run
+        if self.fast_dev_run:
+            self.limit_train_batches = 5
+            self.limit_val_batches = 5
+            self.epochs = 1
+        # Overfit callback
+        else:
+            self.overfit_callback = self._overfit_callback()
+            if self.overfit_callback:
+                self.train_dataloader = DataLoader(
+                    self.train_dataloader.dataset, batch_size=self.train_dataloader.batch_size, shuffle=False)
+                self.limit_train_batches = self.overfit_callback.limit_train_batches
+                self.limit_val_batches = self.overfit_callback.limit_val_batches
+                self.epochs = self.overfit_callback.max_epochs
+
+    def _overfit_callback(self):
         for callback in self.callbacks:
             if isinstance(callback, OverfitCallback):
                 return callback
 
     def fit(self, train_dataloader, val_dataloader):
         self.logger.init()
-        epochs = self.logger.config["epochs"]
+        self.epochs = self.logger.config["epochs"]
 
-        # Overfit callback
-        train_dataloader = DataLoader(
-            train_dataloader.dataset, batch_size=train_dataloader.batch_size, shuffle=False)
-        callback = self.overfit_callback()
-        if callback:
-            self.limit_train_batches = callback.limit_train_batches
-            self.limit_val_batches = callback.limit_val_batches
+        # setup
+        self.train_dataloader = train_dataloader
+        self.setup()
 
         # Loop
-        for epoch in range(epochs):
+        for epoch in range(self.epochs):
             self.epoch = epoch
-            epoch_train_accuracy = self.train(train_dataloader)
+            epoch_train_accuracy = self.train()
             epoch_val_accuracy = self.val(val_dataloader)
 
             self.log_model()
             # fmt:off
             print(f"Epoch: {self.epoch}, train_accuracy: {\
                   epoch_train_accuracy:.2f}, val_accuracy: {epoch_val_accuracy:.2f}")
+
+            if self.fast_dev_run:
+                print("Sanity check done with fast dev run!")
+
+            if hasattr(self, 'overfit_callback') and self.overfit_callback and epoch_train_accuracy >= 100.0:
+                print(f"Overfit done at epoch: {epoch}.")
+                break
             # fmt:on
 
-    def train(self, train_dataloader):
+    def train(self):
         step_train_losses = []
         step_train_accuracies = []
 
         self.module.model.train()
-        for step, batch in enumerate(train_dataloader):
+        for step, batch in enumerate(self.train_dataloader):
             if self.limit_train_batches and (step > self.limit_train_batches):
                 break
 
@@ -116,42 +136,14 @@ class Trainer:
         epoch_val_accuracy = torch.tensor(step_val_accuracies).mean()
 
         wandb.log({
+            "epoch": self.epoch,
             "epoch_val_loss": epoch_val_loss,
             "epoch_val_accuracy": epoch_val_accuracy,
         })
 
         return epoch_val_accuracy
 
-    # @torch.no_grad()
-    # def test(self, test_dataloader):
-    #     step_test_losses = []
-    #     step_test_accuracies = []
-
-    #     self.model.eval()
-    #     for batch in test_dataloader:
-    #         loss, acc = self._forward(batch)
-    #         step_test_losses.append(loss.item())
-    #         step_test_accuracies.append(acc.item())
-
-    #     test_loss = torch.tensor(step_test_losses).mean().item()
-    #     test_accuracy = torch.tensor(step_test_accuracies).mean().item()
-
-    #     return test_loss, test_accuracy
-
-    def load_model(self, run_path, model_path):
-        api = wandb.Api()
-        run = api.run(run_path)
-        self.config = run.config
-
-        artifact = api.artifact(model_path)
-        local_path = artifact.download()
-        file_name = artifact.file().split("/")[-1]
-
-        self.model = VGGNet()
-        self.model.load_state_dict(torch.load(
-            Path(local_path)/file_name, map_location=self.device))
-
     def log_model(self):
         model_path = self.logs_path / f"model_{self.epoch}.pt"
-        torch.save(self.model.state_dict(), model_path)
+        torch.save(self.module.model.state_dict(), model_path)
         wandb.log_model(model_path, aliases=[f"[epoch-{self.epoch}]"])

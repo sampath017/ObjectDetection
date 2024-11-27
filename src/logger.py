@@ -13,6 +13,3 @@ class WandbLogger:
             config=self.config,
             dir=self.logs_path
         )
-
-    def log(self, metric_name, metric):
-        wandb.log({metric_name: metric})
