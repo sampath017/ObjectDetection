@@ -5,13 +5,12 @@ from torch.utils.data import DataLoader
 from module import VGGNet
 from pathlib import Path
 from callbacks import OverfitCallback
-from utils import accuracy
 
 
 class Trainer:
     def __init__(
         self,
-        model=None,
+        module=None,
         logger=None,
         optimizer=None,
         callbacks=[],
@@ -21,8 +20,9 @@ class Trainer:
         limit_train_batches=None,
         limit_val_batches=None
     ):
-        if model:
-            self.model = model.to(device)
+        self.module = module
+        self.module.device = device
+        self.module.logger = logger
 
         self.logger = logger
         self.optimizer = optimizer
@@ -50,6 +50,7 @@ class Trainer:
             self.limit_train_batches = callback.limit_train_batches
             self.limit_val_batches = callback.limit_val_batches
 
+        # Loop
         for epoch in range(epochs):
             self.epoch = epoch
             epoch_train_accuracy = self.train(train_dataloader)
@@ -61,34 +62,20 @@ class Trainer:
                   epoch_train_accuracy:.2f}, val_accuracy: {epoch_val_accuracy:.2f}")
             # fmt:on
 
-    def _forward(self, batch):
-        x, y = batch
-        x = x.to(self.device)
-        y = y.to(self.device)
-
-        logits = self.model(x)
-        loss = F.cross_entropy(logits, y)
-        acc = accuracy(logits, y)
-
-        return loss, acc
-
     def train(self, train_dataloader):
         step_train_losses = []
         step_train_accuracies = []
 
-        self.model.train()
+        self.module.model.train()
         for step, batch in enumerate(train_dataloader):
             if self.limit_train_batches and (step > self.limit_train_batches):
                 break
 
-            loss, accuracy = self._forward(batch)
+            loss, acc = self.module.training_step(batch)
             step_train_losses.append(loss.item())
-            step_train_accuracies.append(accuracy.item())
+            step_train_accuracies.append(acc.item())
             wandb.log({
                 "step": step,
-                # "lr": self.lr_scheduler.get_last_lr()[0],
-                "step_train_loss": loss.item(),
-                "step_train_accuracy": accuracy.item(),
             })
 
             # optimization
@@ -116,45 +103,40 @@ class Trainer:
         step_val_losses = []
         step_val_accuracies = []
 
-        self.model.eval()
+        self.module.model.eval()
         for step, batch in enumerate(val_dataloader):
             if self.limit_val_batches and (step > self.limit_val_batches):
                 break
 
-            loss, accuracy = self._forward(batch)
+            loss, acc = self.module.validation_step(batch)
             step_val_losses.append(loss.item())
-            step_val_accuracies.append(accuracy.item())
-            wandb.log({
-                "step_val_loss": loss.item(),
-                "step_val_accuracy": accuracy.item(),
-            })
+            step_val_accuracies.append(acc.item())
 
         epoch_val_loss = torch.tensor(step_val_losses).mean()
         epoch_val_accuracy = torch.tensor(step_val_accuracies).mean()
 
         wandb.log({
-            "epoch": self.epoch,
             "epoch_val_loss": epoch_val_loss,
             "epoch_val_accuracy": epoch_val_accuracy,
         })
 
         return epoch_val_accuracy
 
-    @torch.no_grad()
-    def test(self, test_dataloader):
-        step_test_losses = []
-        step_test_accuracies = []
+    # @torch.no_grad()
+    # def test(self, test_dataloader):
+    #     step_test_losses = []
+    #     step_test_accuracies = []
 
-        self.model.eval()
-        for batch in test_dataloader:
-            loss, accuracy = self._forward(batch)
-            step_test_losses.append(loss.item())
-            step_test_accuracies.append(accuracy.item())
+    #     self.model.eval()
+    #     for batch in test_dataloader:
+    #         loss, acc = self._forward(batch)
+    #         step_test_losses.append(loss.item())
+    #         step_test_accuracies.append(acc.item())
 
-        test_loss = torch.tensor(step_test_losses).mean().item()
-        test_accuracy = torch.tensor(step_test_accuracies).mean().item()
+    #     test_loss = torch.tensor(step_test_losses).mean().item()
+    #     test_accuracy = torch.tensor(step_test_accuracies).mean().item()
 
-        return test_loss, test_accuracy
+    #     return test_loss, test_accuracy
 
     def load_model(self, run_path, model_path):
         api = wandb.Api()

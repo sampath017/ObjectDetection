@@ -1,5 +1,6 @@
 import torch.nn.functional as F
 from torch import nn
+from utils import accuracy
 
 
 class VGGNet(nn.Module):
@@ -69,11 +70,6 @@ class QuickModule:
     def log(self, metric, metric_name):
         self.logger.log(metric_name, metric)
 
-
-class VGGNetModule(QuickModule):
-    def __init__(self, model):
-        self.model = model
-
     def forward(self, batch):
         x, y = batch
         x = x.to(self.device)
@@ -81,9 +77,14 @@ class VGGNetModule(QuickModule):
 
         logits = self.model(x)
         loss = F.cross_entropy(logits, y)
-        accuracy = self._accuracy(logits, y)
+        acc = accuracy(logits, y)
 
-        return loss, accuracy
+        return loss, acc
+
+
+class VGGNetModule(QuickModule):
+    def __init__(self):
+        self.model = VGGNet()
 
     def training_step(self, batch):
         loss, acc = self.forward(batch)
@@ -91,7 +92,7 @@ class VGGNetModule(QuickModule):
         self.log("train_loss", loss)
         self.log("train_accuracy", acc)
 
-        return loss
+        return loss, acc
 
     def validation_step(self, batch):
 
@@ -100,4 +101,4 @@ class VGGNetModule(QuickModule):
         self.log("val_loss", loss)
         self.log("val_accuracy", acc)
 
-        return loss
+        return loss, acc
