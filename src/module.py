@@ -4,57 +4,58 @@ from torch import nn
 from utils import accuracy
 
 
+class VGGBlock(nn.Module):
+    def __init__(
+        self,
+        block1_in_channels=3,
+        block1_out_channels=8,
+        block2_in_channels=8,
+        block2_out_channels=8
+    ):
+        super().__init__()
+        self.block = nn.Sequential(
+            # Block 1
+            nn.Conv2d(
+                in_channels=block1_in_channels,
+                out_channels=block1_out_channels,
+                kernel_size=(3, 3),
+                stride=1,
+                padding=1
+            ),
+            nn.BatchNorm2d(num_features=8),
+            nn.ReLU(),
+
+            nn.Conv2d(
+                in_channels=block2_in_channels,
+                out_channels=block2_out_channels,
+                kernel_size=(3, 3),
+                stride=1,
+                padding=1
+            ),
+            nn.BatchNorm2d(num_features=8),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=(2, 2), stride=2)
+        )
+
+    def forward(self, x):
+        return self.block(x)
+
+
 class VGGNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.feature_extractor = nn.Sequential(
-            # Block 1
-            nn.Conv2d(
-                in_channels=3,
-                out_channels=8,
-                kernel_size=(3, 3),
-                stride=1,
-                padding=1
-            ),
-            nn.BatchNorm2d(num_features=8),
-            nn.ReLU(),
-
-            nn.Conv2d(
-                in_channels=8,
-                out_channels=8,
-                kernel_size=(3, 3),
-                stride=1,
-                padding=1
-            ),
-            nn.BatchNorm2d(num_features=8),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=(2, 2), stride=2),
-
-            # Block 2
-            nn.Conv2d(
-                in_channels=8,
-                out_channels=8,
-                kernel_size=(3, 3),
-                stride=1,
-                padding=1
-            ),
-            nn.BatchNorm2d(num_features=8),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=(2, 2), stride=2),
-
-            nn.Conv2d(
-                in_channels=8,
-                out_channels=8,
-                kernel_size=(3, 3),
-                stride=1,
-                padding=1
-            ),
-            nn.BatchNorm2d(num_features=8),
-            nn.ReLU(),
+            VGGBlock(3, 8, 8, 8),
+            VGGBlock(8, 8, 8, 8),
+            VGGBlock(8, 8, 8, 8),
+            VGGBlock(8, 8, 8, 8),
         )
 
         self.classifier = nn.Sequential(
-            nn.Linear(512, 10),
+            nn.Linear(32, 16),
+            nn.ReLU(),
+
+            nn.Linear(16, 10),
         )
 
     def forward(self, x):
@@ -66,10 +67,11 @@ class VGGNet(nn.Module):
 
 class QuickModule:
     def __init__(self):
-        pass
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def forward(self, batch):
         x, y = batch
+        self.model = self.model.to(self.device)
         x = x.to(self.device)
         y = y.to(self.device)
 
@@ -82,6 +84,7 @@ class QuickModule:
 
 class VGGNetModule(QuickModule):
     def __init__(self):
+        super().__init__()
         self.model = VGGNet()
 
     def training_step(self, batch):

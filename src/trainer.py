@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from module import VGGNet
 from pathlib import Path
 from callbacks import OverfitCallback
+import time
 
 
 class Trainer:
@@ -15,24 +16,27 @@ class Trainer:
         callbacks=[],
         logs_path=None,
         lr_scheduler=None,
-        device=None,
         limit_train_batches=None,
         limit_val_batches=None,
-        fast_dev_run=False
+        fast_dev_run=False,
+        measure_time=False
     ):
         self.module = module
-        self.module.device = device
         self.module.logger = logger
 
         self.logger = logger
         self.optimizer = module.optimizer()
         self.callbacks = callbacks
         self.lr_scheduler = lr_scheduler
-        self.device = device
         self.limit_train_batches = limit_train_batches
         self.limit_val_batches = limit_val_batches
         self.logs_path = logs_path
         self.fast_dev_run = fast_dev_run
+        self.measure_time = measure_time
+
+        if self.fast_dev_run:
+            import os
+            os.environ["WANDB_MODE"] = "offline"
 
     def setup(self):
         # Fast dev run
@@ -65,8 +69,16 @@ class Trainer:
 
         # Loop
         for epoch in range(self.epochs):
+            measure_time_bool = self.measure_time and epoch == 0
             self.epoch = epoch
+            if measure_time_bool:
+                start_time = time.time()
             epoch_train_accuracy = self.train()
+            if measure_time_bool:
+                end_time = time.time()
+
+            if measure_time_bool:
+                print(f"Time per epoch: {end_time-start_time:.2f} seconds")
             epoch_val_accuracy = self.val(val_dataloader)
 
             self.log_model()
