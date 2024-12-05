@@ -3,6 +3,8 @@ import torch
 from torch import nn
 from utils import accuracy
 
+import wandb
+
 
 class VGGBlock(nn.Module):
     def __init__(

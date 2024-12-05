@@ -1,10 +1,8 @@
 import torch
 import wandb
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from module import VGGNet
 from pathlib import Path
-from callbacks import OverfitCallback
+from callbacks import OverfitCallback, EarlyStoppingCallback
 import time
 
 
@@ -21,16 +19,17 @@ class Trainer:
         fast_dev_run=False,
         measure_time=False
     ):
+        # module
         self.module = module
         self.module.logger = logger
 
         self.logger = logger
+        self.logs_path = logs_path
         self.optimizer = module.optimizer()
         self.callbacks = callbacks
         self.lr_scheduler = lr_scheduler
         self.limit_train_batches = limit_train_batches
         self.limit_val_batches = limit_val_batches
-        self.logs_path = logs_path
         self.fast_dev_run = fast_dev_run
         self.measure_time = measure_time
 
@@ -39,6 +38,10 @@ class Trainer:
             os.environ["WANDB_MODE"] = "offline"
 
     def setup(self):
+        self.logger.init()
+        wandb.log({"model_architecture": self.module.model})
+        self.epochs = self.logger.config["max_epochs"]
+
         # Fast dev run
         if self.fast_dev_run:
             self.limit_train_batches = 5
@@ -56,13 +59,24 @@ class Trainer:
 
     def _overfit_callback(self):
         for callback in self.callbacks:
+            if isinstance(callback, EarlyStoppingCallback):
+                return None
+
+        for callback in self.callbacks:
             if isinstance(callback, OverfitCallback):
                 return callback
 
-    def fit(self, train_dataloader, val_dataloader):
-        self.logger.init()
-        self.epochs = self.logger.config["epochs"]
+    def _earlystopping_callback(self, epoch_train_accuracy, epoch_val_accuracy):
+        stop_training = False
+        for callback in self.callbacks:
+            if isinstance(callback, EarlyStoppingCallback):
+                stop_training, accuracy_diff = callback.check(
+                    epoch_train_accuracy, epoch_val_accuracy)
+                break
 
+        return stop_training, accuracy_diff
+
+    def fit(self, train_dataloader, val_dataloader):
         # setup
         self.train_dataloader = train_dataloader
         self.setup()
@@ -73,15 +87,15 @@ class Trainer:
             self.epoch = epoch
             if measure_time_bool:
                 start_time = time.time()
-            epoch_train_accuracy = self.train()
+            epoch_train_loss, epoch_train_accuracy = self.train()
             if measure_time_bool:
                 end_time = time.time()
 
             if measure_time_bool:
                 print(f"Time per epoch: {end_time-start_time:.2f} seconds")
-            epoch_val_accuracy = self.val(val_dataloader)
+            epoch_val_loss, epoch_val_accuracy = self.val(val_dataloader)
 
-            self.log_model()
+            # Print
             # fmt:off
             print(f"Epoch: {self.epoch}, train_accuracy: {\
                   epoch_train_accuracy:.2f}, val_accuracy: {epoch_val_accuracy:.2f}")
@@ -93,6 +107,18 @@ class Trainer:
                 print(f"Overfit done at epoch: {epoch}.")
                 break
             # fmt:on
+
+            self.checkpoint()
+
+            # Early Stopping
+            stop_training, accuracy_diff = self._earlystopping_callback(
+                epoch_train_accuracy, epoch_val_accuracy)
+            if stop_training:
+                # fmt:off
+                print(f"Stoppping training due to early stopping crossing threshold {\
+                      accuracy_diff:.2f}")
+                # fmt:on
+                break
 
     def train(self):
         step_train_losses = []
@@ -128,7 +154,7 @@ class Trainer:
             "epoch_train_accuracy": epoch_train_accuracy,
         })
 
-        return epoch_train_accuracy
+        return epoch_train_loss, epoch_train_accuracy
 
     @torch.no_grad()
     def val(self, val_dataloader):
@@ -153,9 +179,22 @@ class Trainer:
             "epoch_val_accuracy": epoch_val_accuracy,
         })
 
-        return epoch_val_accuracy
+        return epoch_val_loss, epoch_val_accuracy
 
-    def log_model(self):
-        model_path = self.logs_path / f"model_{self.epoch}.pt"
-        torch.save(self.module.model.state_dict(), model_path)
-        wandb.log_model(model_path, aliases=[f"[epoch-{self.epoch}]"])
+    def checkpoint(self):
+        self.checkpoint_path = Path(wandb.run.dir).parent / "checkpoints"
+        self.checkpoint_path.mkdir(exist_ok=True)
+        save_path = self.checkpoint_path / f"checkpoint-{self.epoch}.pt"
+
+        torch.save({
+            "model": self.module.model.state_dict(),
+            "optimizer": self.optimizer.state_dict()
+
+        }, save_path)
+
+        wandb.log_model(save_path, aliases=[
+                        f"[checkpoint-{self.epoch}]"])
+
+    def clean(self):
+        for pt_file in self.logs_path.glob('*.pt'):
+            pt_file.unlink()
