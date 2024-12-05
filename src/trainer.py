@@ -40,13 +40,13 @@ class Trainer:
     def setup(self):
         self.logger.init()
         wandb.log({"model_architecture": self.module.model})
-        self.epochs = self.logger.config["max_epochs"]
+        self.max_epochs = self.logger.config["max_epochs"]
 
         # Fast dev run
         if self.fast_dev_run:
             self.limit_train_batches = 5
             self.limit_val_batches = 5
-            self.epochs = 1
+            self.max_epochs = 1
         # Overfit callback
         else:
             self.overfit_callback = self._overfit_callback()
@@ -55,7 +55,7 @@ class Trainer:
                     self.train_dataloader.dataset, batch_size=self.train_dataloader.batch_size, shuffle=False)
                 self.limit_train_batches = self.overfit_callback.limit_train_batches
                 self.limit_val_batches = self.overfit_callback.limit_val_batches
-                self.epochs = self.overfit_callback.max_epochs
+                self.max_epochs = self.overfit_callback.max_epochs
 
     def _overfit_callback(self):
         for callback in self.callbacks:
@@ -82,7 +82,7 @@ class Trainer:
         self.setup()
 
         # Loop
-        for epoch in range(self.epochs):
+        for epoch in range(self.max_epochs):
             measure_time_bool = self.measure_time and epoch == 0
             self.epoch = epoch
             if measure_time_bool:
@@ -119,6 +119,9 @@ class Trainer:
                       accuracy_diff:.2f}")
                 # fmt:on
                 break
+
+
+            print(f"Training stopped max_epochs: {self.max_epochs} reached!")
 
     def train(self):
         step_train_losses = []
