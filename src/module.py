@@ -47,10 +47,10 @@ class VGGNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.feature_extractor = nn.Sequential(
-            VGGBlock(3, 8, 8, 8),
-            VGGBlock(8, 8, 8, 8),
-            VGGBlock(8, 8, 8, 8),
-            VGGBlock(8, 8, 8, 8),
+            VGGBlock(3, 8, 16, 16),
+            VGGBlock(32, 32, 64, 64),
+            VGGBlock(128, 128, 256, 256),
+            VGGBlock(512, 512, 512, 512)
         )
 
         self.classifier = nn.Sequential(
