@@ -59,15 +59,12 @@ class Trainer:
 
     def _overfit_callback(self):
         for callback in self.callbacks:
-            if isinstance(callback, EarlyStoppingCallback):
-                return None
-
-        for callback in self.callbacks:
             if isinstance(callback, OverfitCallback):
                 return callback
 
     def _earlystopping_callback(self, epoch_train_accuracy, epoch_val_accuracy):
         stop_training = False
+        accuracy_diff = None
         for callback in self.callbacks:
             if isinstance(callback, EarlyStoppingCallback):
                 stop_training, accuracy_diff = callback.check(
@@ -92,6 +89,7 @@ class Trainer:
                 end_time = time.time()
 
             if measure_time_bool:
+                # type: ignore
                 print(f"Time per epoch: {end_time-start_time:.2f} seconds")
             epoch_val_loss, epoch_val_accuracy = self.val(val_dataloader)
 
@@ -120,8 +118,7 @@ class Trainer:
                 # fmt:on
                 break
 
-
-            print(f"Training stopped max_epochs: {self.max_epochs} reached!")
+        print(f"Training stopped max_epochs: {self.max_epochs} reached!")
 
     def train(self):
         step_train_losses = []

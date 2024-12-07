@@ -6,3 +6,4 @@ reference/
 wandb/
 artifacts/
 .venv/
+*.png
