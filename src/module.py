@@ -24,7 +24,7 @@ class VGGBlock(nn.Module):
                 stride=1,
                 padding=1
             ),
-            nn.BatchNorm2d(num_features=8),
+            nn.BatchNorm2d(num_features=block1_out_channels),
             nn.ReLU(),
 
             nn.Conv2d(
@@ -34,7 +34,7 @@ class VGGBlock(nn.Module):
                 stride=1,
                 padding=1
             ),
-            nn.BatchNorm2d(num_features=8),
+            nn.BatchNorm2d(num_features=block2_out_channels),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=(2, 2), stride=2)
         )
@@ -47,17 +47,17 @@ class VGGNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.feature_extractor = nn.Sequential(
-            VGGBlock(3, 8, 16, 16),
-            VGGBlock(32, 32, 64, 64),
-            VGGBlock(128, 128, 256, 256),
+            VGGBlock(3, 8, 8, 16),
+            VGGBlock(16, 32, 32, 64),
+            VGGBlock(64, 128, 128, 512),
             VGGBlock(512, 512, 512, 512)
         )
 
         self.classifier = nn.Sequential(
-            nn.Linear(32, 16),
+            nn.Linear(2048, 128),
             nn.ReLU(),
 
-            nn.Linear(16, 10),
+            nn.Linear(128, 10),
         )
 
     def forward(self, x):
