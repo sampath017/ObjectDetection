@@ -25,7 +25,7 @@ class Trainer:
 
         self.logger = logger
         self.logs_path = logs_path
-        self.optimizer = module.optimizer()
+        self.optimizer_func = module.optimizer()
         self.callbacks = callbacks
         self.lr_scheduler = lr_scheduler
         self.limit_train_batches = limit_train_batches
@@ -117,8 +117,9 @@ class Trainer:
                       accuracy_diff:.2f}")
                 # fmt:on
                 break
-
-        print(f"Training stopped max_epochs: {self.max_epochs} reached!")
+        
+        if epoch == self.max_epochs:
+            print(f"Training stopped max_epochs: {self.max_epochs} reached!")
 
     def train(self):
         step_train_losses = []
@@ -137,9 +138,9 @@ class Trainer:
             })
 
             # optimization
-            self.optimizer.zero_grad()
+            self.optimizer_func.zero_grad()
             loss.backward()
-            self.optimizer.step()
+            self.optimizer_func.step()
 
             # lr_scheduler step
             if self.lr_scheduler:
@@ -188,7 +189,7 @@ class Trainer:
 
         torch.save({
             "model": self.module.model.state_dict(),
-            "optimizer": self.optimizer.state_dict()
+            "optimizer": self.optimizer_func.state_dict()
 
         }, save_path)
 

@@ -72,8 +72,8 @@ class QuickModule:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def forward(self, batch):
-        x, y = batch
         self.model = self.model.to(self.device)
+        x, y = batch
         x = x.to(self.device)
         y = y.to(self.device)
 
@@ -82,6 +82,12 @@ class QuickModule:
         acc = accuracy(logits, y)
 
         return loss, acc
+    
+    def load_from_checkpoint(self, path):
+        self.optimizer_func = self.optimizer()
+        checkpoint = torch.load(path, weights_only=True)
+        self.model.load_state_dict(checkpoint["model"])
+        self.optimizer_func.load_state_dict(checkpoint["optimizer"])
 
 
 class VGGNetModule(QuickModule):
