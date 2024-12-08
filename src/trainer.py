@@ -1,9 +1,11 @@
+import os
 import torch
 import wandb
 from torch.utils.data import DataLoader
 from pathlib import Path
 from callbacks import OverfitCallback, EarlyStoppingCallback
 import time
+from dataset import MapDataset
 
 
 class Trainer:
@@ -17,7 +19,9 @@ class Trainer:
         limit_train_batches=None,
         limit_val_batches=None,
         fast_dev_run=False,
-        measure_time=False
+        measure_time=False,
+        num_workers=6,
+        checkpoint="every"
     ):
         # module
         self.module = module
@@ -32,10 +36,13 @@ class Trainer:
         self.limit_val_batches = limit_val_batches
         self.fast_dev_run = fast_dev_run
         self.measure_time = measure_time
+        self.num_workers=num_workers
+        self.checkpoint=checkpoint
 
         if self.fast_dev_run:
-            import os
             os.environ["WANDB_MODE"] = "offline"
+        else:
+            os.environ["WANDB_MODE"] = "online"
 
     def setup(self):
         self.logger.init()
@@ -51,8 +58,12 @@ class Trainer:
         else:
             self.overfit_callback = self._overfit_callback()
             if self.overfit_callback:
+                if not self.overfit_callback.augument_data:
+                    train_dataset = MapDataset(self.train_dataloader.dataset, transform=self.val_dataloader.dataset.transform)
+                else: train_dataset = self.train_dataloader.dataset
+
                 self.train_dataloader = DataLoader(
-                    self.train_dataloader.dataset, batch_size=self.train_dataloader.batch_size, shuffle=False)
+                    train_dataset, batch_size=self.train_dataloader.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True)
                 self.limit_train_batches = self.overfit_callback.limit_train_batches
                 self.limit_val_batches = self.overfit_callback.limit_val_batches
                 self.max_epochs = self.overfit_callback.max_epochs
@@ -76,7 +87,9 @@ class Trainer:
     def fit(self, train_dataloader, val_dataloader):
         # setup
         self.train_dataloader = train_dataloader
+        self.val_dataloader = val_dataloader
         self.setup()
+        best_epoch_train_loss = torch.inf
 
         # Loop
         for epoch in range(self.max_epochs):
@@ -106,7 +119,13 @@ class Trainer:
                 break
             # fmt:on
 
-            self.checkpoint()
+            if self.checkpoint == "every":
+                self.save_checkpoint()
+            if self.checkpoint == "best_train":
+                if epoch_train_loss < best_epoch_train_loss:
+                    best_epoch_train_loss = epoch_train_loss
+                    self.save_checkpoint(best=True)
+
 
             # Early Stopping
             stop_training, accuracy_diff = self._earlystopping_callback(
@@ -182,10 +201,13 @@ class Trainer:
 
         return epoch_val_loss, epoch_val_accuracy
 
-    def checkpoint(self):
+    def save_checkpoint(self, best=False):
         self.checkpoint_path = Path(wandb.run.dir).parent / "checkpoints"
         self.checkpoint_path.mkdir(exist_ok=True)
-        save_path = self.checkpoint_path / f"checkpoint-{self.epoch}.pt"
+        if best:
+            save_path = self.checkpoint_path / f"best.pt"
+        else:
+            save_path = self.checkpoint_path / f"checkpoint-{self.epoch}.pt"
 
         torch.save({
             "model": self.module.model.state_dict(),
@@ -193,9 +215,8 @@ class Trainer:
 
         }, save_path)
 
-        wandb.log_model(save_path, aliases=[
-                        f"[checkpoint-{self.epoch}]"])
+        if best:
+            wandb.log_model(save_path, aliases=["best"])
+        else:
+            wandb.log_model(save_path, aliases=[f"[checkpoint-{self.epoch}]"])
 
-    def clean(self):
-        for pt_file in self.logs_path.glob('*.pt'):
-            pt_file.unlink()
