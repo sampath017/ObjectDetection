@@ -3,8 +3,6 @@ import torch
 from torch import nn
 from utils import accuracy
 
-import wandb
-
 
 class VGGBlock(nn.Module):
     def __init__(
@@ -13,7 +11,8 @@ class VGGBlock(nn.Module):
         block1_out_channels=8,
         block2_in_channels=8,
         block2_out_channels=8,
-        max_pool=False
+        max_pool=False,
+        last_block=False
     ):
         super().__init__()
         layers = [
@@ -23,7 +22,8 @@ class VGGBlock(nn.Module):
                 out_channels=block1_out_channels,
                 kernel_size=(3, 3),
                 stride=1,
-                padding=1
+                padding=1,
+                bias=False
             ),
             nn.BatchNorm2d(num_features=block1_out_channels),
             nn.ReLU(),
@@ -33,11 +33,14 @@ class VGGBlock(nn.Module):
                 out_channels=block2_out_channels,
                 kernel_size=(3, 3),
                 stride=1,
-                padding=1
-            ),
-            nn.BatchNorm2d(num_features=block2_out_channels),
-            nn.ReLU(),
+                padding=1,
+                bias=True if last_block else False
+            )
         ]
+
+        if not last_block:
+            layers.extend([nn.BatchNorm2d(num_features=block2_out_channels),
+                           nn.ReLU(),])
 
         if max_pool:
             layers.append(nn.MaxPool2d(kernel_size=(2, 2), stride=2))
@@ -61,7 +64,29 @@ class VGGNet(nn.Module):
             VGGBlock(512, 512, 512, 512),
             VGGBlock(512, 512, 512, 512),
             VGGBlock(512, 512, 512, 512),
-            VGGBlock(512, 512, 512, 512)
+            VGGBlock(512, 512, 512, 512),
+
+
+            VGGBlock(512, 512, 512, 512),
+            VGGBlock(512, 512, 512, 512),
+            VGGBlock(512, 512, 512, 512),
+            VGGBlock(512, 512, 512, 512),
+            VGGBlock(512, 512, 512, 512),
+            VGGBlock(512, 512, 512, 512),
+            VGGBlock(512, 512, 512, 512),
+            VGGBlock(512, 512, 512, 512),
+            VGGBlock(512, 512, 512, 512),
+            VGGBlock(512, 512, 512, 512),
+
+
+            VGGBlock(512, 512, 512, 512),
+            VGGBlock(512, 512, 512, 512),
+            VGGBlock(512, 512, 512, 512),
+            VGGBlock(512, 512, 512, 512),
+            VGGBlock(512, 512, 512, 512),
+            VGGBlock(512, 512, 512, 512),
+            VGGBlock(512, 512, 512, 512),
+            VGGBlock(512, 512, 512, 512, last_block=True)
         )
 
         self.classifier = nn.Sequential(

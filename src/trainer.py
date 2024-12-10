@@ -36,8 +36,9 @@ class Trainer:
         self.limit_val_batches = limit_val_batches
         self.fast_dev_run = fast_dev_run
         self.measure_time = measure_time
-        self.num_workers=num_workers
-        self.checkpoint=checkpoint
+        self.num_workers = num_workers
+        self.checkpoint = checkpoint
+        self.overfit_callback = None
 
         if self.fast_dev_run:
             os.environ["WANDB_MODE"] = "offline"
@@ -58,12 +59,14 @@ class Trainer:
         else:
             self.overfit_callback = self._overfit_callback()
             if self.overfit_callback:
-                if not self.overfit_callback.augument_data:
-                    train_dataset = MapDataset(self.train_dataloader.dataset, transform=self.val_dataloader.dataset.transform)
-                else: train_dataset = self.train_dataloader.dataset
+                if self.overfit_callback.augument_data:
+                    train_dataset = self.train_dataloader.dataset
+                else:
+                    train_dataset = MapDataset(
+                        self.train_dataloader.dataset, transform=self.val_dataloader.dataset.transform)
 
                 self.train_dataloader = DataLoader(
-                    train_dataset, batch_size=self.train_dataloader.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True)
+                    train_dataset, batch_size=self.overfit_callback.batch_size, shuffle=False, num_workers=self.num_workers, pin_memory=True)
                 self.limit_train_batches = self.overfit_callback.limit_train_batches
                 self.limit_val_batches = self.overfit_callback.limit_val_batches
                 self.max_epochs = self.overfit_callback.max_epochs
@@ -91,54 +94,66 @@ class Trainer:
         self.setup()
         best_epoch_train_loss = torch.inf
 
-        # Loop
-        for epoch in range(self.max_epochs):
-            measure_time_bool = self.measure_time and epoch == 0
-            self.epoch = epoch
-            if measure_time_bool:
-                start_time = time.time()
-            epoch_train_loss, epoch_train_accuracy = self.train()
-            if measure_time_bool:
-                end_time = time.time()
+        try:
+            # Loop
+            for epoch in range(self.max_epochs):
+                measure_time_bool = self.measure_time and epoch == 0
+                self.epoch = epoch
+                if measure_time_bool:
+                    start_time = time.time()
+                epoch_train_loss, epoch_train_accuracy = self.train()
+                if measure_time_bool:
+                    end_time = time.time()
 
-            if measure_time_bool:
-                # type: ignore
-                print(f"Time per epoch: {end_time-start_time:.2f} seconds")
-            epoch_val_loss, epoch_val_accuracy = self.val(val_dataloader)
+                if measure_time_bool:
+                    # type: ignore
+                    print(f"Time per epoch: {end_time-start_time:.2f} seconds")
 
-            # Print
-            # fmt:off
-            print(f"Epoch: {self.epoch}, train_accuracy: {\
-                  epoch_train_accuracy:.2f}, val_accuracy: {epoch_val_accuracy:.2f}")
+                if not self.overfit_callback:
+                    epoch_val_loss, epoch_val_accuracy = self.val(
+                        val_dataloader)
+                else:
+                    epoch_val_accuracy = torch.inf
 
-            if self.fast_dev_run:
-                print("Sanity check done with fast dev run!")
-
-            if hasattr(self, 'overfit_callback') and self.overfit_callback and epoch_train_accuracy >= 100.0:
-                print(f"Overfit done at epoch: {epoch}.")
-                break
-            # fmt:on
-
-            if self.checkpoint == "every":
-                self.save_checkpoint()
-            if self.checkpoint == "best_train":
-                if epoch_train_loss < best_epoch_train_loss:
-                    best_epoch_train_loss = epoch_train_loss
-                    self.save_checkpoint(best=True)
-
-
-            # Early Stopping
-            stop_training, accuracy_diff = self._earlystopping_callback(
-                epoch_train_accuracy, epoch_val_accuracy)
-            if stop_training:
+                # Print
                 # fmt:off
-                print(f"Stoppping training due to early stopping crossing threshold {\
-                      accuracy_diff:.2f}")
+                print(f"Epoch: {self.epoch}, train_accuracy: {\
+                    epoch_train_accuracy:.2f}, val_accuracy: {epoch_val_accuracy:.2f}")
+
+                if self.fast_dev_run:
+                    print("Sanity check done with fast dev run!")
+
+                if hasattr(self, 'overfit_callback') and self.overfit_callback and epoch_train_accuracy >= 100.0:
+                    print(f"Overfit done at epoch: {epoch}.")
+                    break
                 # fmt:on
-                break
-        
-        if epoch == self.max_epochs:
-            print(f"Training stopped max_epochs: {self.max_epochs} reached!")
+
+                if self.checkpoint == "every":
+                    self.save_checkpoint()
+                if self.checkpoint == "best_train":
+                    if epoch_train_loss < best_epoch_train_loss:
+                        best_epoch_train_loss = epoch_train_loss
+                        self.save_checkpoint(save_best_model=True)
+
+                # Early Stopping
+                stop_training, accuracy_diff = self._earlystopping_callback(
+                    epoch_train_accuracy, epoch_val_accuracy)
+                if stop_training:
+                    # fmt:off
+                    print(f"Stoppping training due to early stopping crossing threshold {\
+                        accuracy_diff:.2f}")
+                    # fmt:on
+                    break
+
+            if epoch == self.max_epochs:
+                print(f"Training stopped max_epochs: {
+                      self.max_epochs} reached!")
+
+        except Exception as e:
+            print(e)
+        finally:
+            if not self.fast_dev_run and self.save_best_model:
+                wandb.log_model(self.save_path, aliases=["best"])
 
     def train(self):
         step_train_losses = []
@@ -201,22 +216,22 @@ class Trainer:
 
         return epoch_val_loss, epoch_val_accuracy
 
-    def save_checkpoint(self, best=False):
+    def save_checkpoint(self, save_best_model=False):
+        self.save_best_model = save_best_model
         self.checkpoint_path = Path(wandb.run.dir).parent / "checkpoints"
         self.checkpoint_path.mkdir(exist_ok=True)
-        if best:
-            save_path = self.checkpoint_path / f"best.pt"
+        if save_best_model:
+            self.save_path = self.checkpoint_path / f"best.pt"
         else:
-            save_path = self.checkpoint_path / f"checkpoint-{self.epoch}.pt"
+            self.save_path = self.checkpoint_path / \
+                f"checkpoint-{self.epoch}.pt"
 
         torch.save({
             "model": self.module.model.state_dict(),
             "optimizer": self.optimizer_func.state_dict()
 
-        }, save_path)
+        }, self.save_path)
 
-        if best:
-            wandb.log_model(save_path, aliases=["best"])
-        else:
-            wandb.log_model(save_path, aliases=[f"[checkpoint-{self.epoch}]"])
-
+        if not save_best_model:
+            wandb.log_model(self.save_path, aliases=[
+                            f"[checkpoint-{self.epoch}]"])

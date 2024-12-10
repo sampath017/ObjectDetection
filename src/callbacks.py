@@ -1,5 +1,5 @@
 class OverfitCallback:
-    def __init__(self, limit_batches=2, limit_train_batches=2, limit_val_batches=2, max_epochs=200, augument_data=True):
+    def __init__(self, limit_batches=2, batch_size=None, limit_train_batches=2, limit_val_batches=2, max_epochs=200, augument_data=True):
         if limit_batches > 0:
             self.limit_train_batches = limit_batches
             self.limit_val_batches = limit_batches
@@ -9,6 +9,7 @@ class OverfitCallback:
 
         self.max_epochs = max_epochs
         self.augument_data = augument_data
+        self.batch_size = batch_size
 
 
 class EarlyStoppingCallback:
