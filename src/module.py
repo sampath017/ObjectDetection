@@ -10,33 +10,57 @@ class ResidualNet(nn.Module):
         self.feature_extractor = nn.Sequential(
             ConvBlock(3, 8, 8, 16, max_pool=True),
             ConvBlock(16, 32, 32, 64, max_pool=True),
+            nn.Dropout(p=0.2),
+
             ConvBlock(64, 128, 128, 512, max_pool=True),
             ResidualBlock(512, max_pool=True),
-            ResidualBlock(512),
-            ResidualBlock(512),
-            ResidualBlock(512),
-            ResidualBlock(512),
-            ResidualBlock(512),
-            # ResidualBlock(512, 512, 512, 512),
+            nn.Dropout(p=0.2),
 
-            # ResidualBlock(512, 512, 512, 512),
-            # ResidualBlock(512, 512, 512, 512),
-            # ResidualBlock(512, 512, 512, 512),
-            # ResidualBlock(512, 512, 512, 512),
-            # ResidualBlock(512, 512, 512, 512),
-            # ResidualBlock(512, 512, 512, 512),
-            # ResidualBlock(512, 512, 512, 512),
-            # ResidualBlock(512, 512, 512, 512),
-            # ResidualBlock(512, 512, 512, 512),
-            # ResidualBlock(512, 512, 512, 512),
+            ResidualBlock(512),
+            ResidualBlock(512),
+            nn.Dropout(p=0.2),
 
-            # ResidualBlock(512, 512, 512, 512),
-            # ResidualBlock(512, 512, 512, 512),
-            # ResidualBlock(512, 512, 512, 512),
-            # ResidualBlock(512, 512, 512, 512),
-            # ResidualBlock(512, 512, 512, 512),
-            # ResidualBlock(512, 512, 512, 512),
-            # ResidualBlock(512, 512, 512, 512),
+            ResidualBlock(512),
+            ResidualBlock(512),
+            nn.Dropout(p=0.2),
+
+            ResidualBlock(512),
+            ResidualBlock(512),
+            nn.Dropout(p=0.2),
+
+            ResidualBlock(512),
+            ResidualBlock(512),
+            nn.Dropout(p=0.2),
+
+            ResidualBlock(512),
+            ResidualBlock(512),
+            nn.Dropout(p=0.2),
+
+            ResidualBlock(512),
+            ResidualBlock(512),
+            nn.Dropout(p=0.2),
+
+            ResidualBlock(512),
+            ResidualBlock(512),
+            nn.Dropout(p=0.2),
+
+            ResidualBlock(512),
+            ResidualBlock(512),
+            nn.Dropout(p=0.2),
+
+            ResidualBlock(512),
+            ResidualBlock(512),
+            nn.Dropout(p=0.2),
+
+            ResidualBlock(512),
+            ResidualBlock(512),
+            nn.Dropout(p=0.2),
+
+            ResidualBlock(512),
+            ResidualBlock(512),
+            nn.Dropout(p=0.2),
+
+            ResidualBlock(512),
             ResidualBlock(512, last_block=True)
         )
 
@@ -89,8 +113,10 @@ class ConvBlock(nn.Module):
         ]
 
         if not last_block:
-            layers.extend([nn.BatchNorm2d(num_features=block2_out_channels),
-                           nn.ReLU(),])
+            layers.extend([
+                nn.BatchNorm2d(num_features=block2_out_channels),
+                nn.ReLU(),
+            ])
 
         if max_pool:
             layers.append(nn.MaxPool2d(kernel_size=(2, 2), stride=2))
@@ -133,8 +159,11 @@ class ResidualBlock(nn.Module):
         ]
 
         if not last_block:
-            layers.extend([nn.BatchNorm2d(num_features=channels),
-                           nn.ReLU(),])
+            layers.extend([
+                nn.BatchNorm2d(num_features=channels),
+                nn.ReLU(),
+            ])
+
         self.block = nn.Sequential(*layers)
 
         self.max_pool = nn.MaxPool2d(kernel_size=(
