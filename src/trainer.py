@@ -1,4 +1,6 @@
+import traceback
 import os
+from colorama import Fore, Style
 import torch
 import wandb
 from torch.utils.data import DataLoader
@@ -15,7 +17,9 @@ class Trainer:
         logger=None,
         callbacks=[],
         logs_path=None,
+        optimizer=None,
         lr_scheduler=None,
+        lr_scheduler_on_epoch=True,
         limit_train_batches=None,
         limit_val_batches=None,
         fast_dev_run=False,
@@ -23,27 +27,29 @@ class Trainer:
         num_workers=6,
         checkpoint="every"
     ):
-        # module
         self.module = module
-        self.module.logger = logger
 
         self.logger = logger
+        if self.logger.mode == "online":
+            if fast_dev_run:
+                self.logger.mode = "offline"
+
         self.logs_path = logs_path
-        self.optimizer_func = module.optimizer()
+        self.optimizer = optimizer
         self.callbacks = callbacks
         self.lr_scheduler = lr_scheduler
+        self.lr_scheduler_on_epoch = lr_scheduler_on_epoch,
         self.limit_train_batches = limit_train_batches
         self.limit_val_batches = limit_val_batches
         self.fast_dev_run = fast_dev_run
         self.measure_time = measure_time
         self.num_workers = num_workers
         self.checkpoint = checkpoint
-        self.overfit_callback = None
 
-        if self.fast_dev_run:
-            os.environ["WANDB_MODE"] = "offline"
-        else:
-            os.environ["WANDB_MODE"] = "online"
+        self.overfit_callback = None
+        self.training_step = 0
+        self.validation_step = 0
+        self._earlystopping_callback()
 
     def setup(self):
         self.logger.init()
@@ -76,84 +82,120 @@ class Trainer:
             if isinstance(callback, OverfitCallback):
                 return callback
 
-    def _earlystopping_callback(self, epoch_train_accuracy, epoch_val_accuracy):
-        stop_training = False
-        accuracy_diff = None
+    def _earlystopping_callback(self):
         for callback in self.callbacks:
             if isinstance(callback, EarlyStoppingCallback):
-                stop_training, accuracy_diff = callback.check(
-                    epoch_train_accuracy, epoch_val_accuracy)
+                self.early_stopping_callback = callback
                 break
+            else:
+                self.early_stopping_callback = False
+
+    def _earlystopping_callback_check(self, epoch_train_accuracy, epoch_val_accuracy):
+        stop_training = False
+        accuracy_diff = None
+        if self.early_stopping_callback:
+            stop_training, accuracy_diff = self.early_stopping_callback.check(
+                epoch_train_accuracy, epoch_val_accuracy)
 
         return stop_training, accuracy_diff
+
+    def _lr_scheduler_update(self, on_epoch=True):
+        if self.lr_scheduler:
+            self.current_lr = self.lr_scheduler.get_last_lr()[0]
+        else:
+            self.current_lr = self.optimizer.param_groups[0]['lr']
+
+        if on_epoch:
+            wandb.log({
+                "epoch": self.epoch,
+                "lr": self.current_lr
+            })
+        else:
+            wandb.log({
+                "training_step": self.training_step,
+                "lr": self.current_lr
+            })
+
+        self.lr_scheduler.step()
 
     def fit(self, train_dataloader, val_dataloader):
         # setup
         self.train_dataloader = train_dataloader
         self.val_dataloader = val_dataloader
         self.setup()
-        best_epoch_train_loss = torch.inf
+        best_epoch_val_accuracy = 0.0
 
-        try:
-            # Loop
-            for epoch in range(self.max_epochs):
-                measure_time_bool = self.measure_time and epoch == 0
-                self.epoch = epoch
-                if measure_time_bool:
-                    start_time = time.time()
-                epoch_train_loss, epoch_train_accuracy = self.train()
-                if measure_time_bool:
-                    end_time = time.time()
+        for epoch in range(self.max_epochs):
+            measure_time_bool = self.measure_time and epoch == 0
+            self.epoch = epoch
 
-                if measure_time_bool:
-                    # type: ignore
-                    print(f"Time per epoch: {end_time-start_time:.2f} seconds")
+            # Train
+            if measure_time_bool:
+                start_time = time.time()
+            epoch_train_loss, epoch_train_accuracy = self.train()
+            if measure_time_bool:
+                end_time = time.time()
 
-                if not self.overfit_callback:
-                    epoch_val_loss, epoch_val_accuracy = self.val(
-                        val_dataloader)
-                else:
-                    epoch_val_accuracy = torch.inf
+            # lr_scheduler step
+            if self.lr_scheduler_on_epoch:
+                self._lr_scheduler_update(on_epoch=True)
 
-                # Print
+            if measure_time_bool:
+                # type: ignore
+                print(f"Time per epoch: {end_time-start_time:.2f} seconds")
+
+            if not self.overfit_callback:
+                epoch_val_loss, epoch_val_accuracy = self.val(
+                    val_dataloader)
+            else:
+                epoch_val_accuracy = torch.inf
+
+            # Early Stopping
+            stop_training, accuracy_diff = self._earlystopping_callback_check(
+                epoch_train_accuracy, epoch_val_accuracy)
+
+            # Print
+            # fmt:off
+            if self.early_stopping_callback:
+                color = Fore.RED if self.early_stopping_callback.counted else ""
+                reset = Style.RESET_ALL if color else ""  
+            else:
+                color = ""
+                reset = ""
+
+            print(f"Epoch: {self.epoch}, train_accuracy: {\
+                epoch_train_accuracy:.2f}, val_accuracy: {color}{epoch_val_accuracy:.2f}{reset}, lr: {self.current_lr:.4f}")
+
+            if self.fast_dev_run:
+                print("Sanity check done with fast dev run!")
+
+            if hasattr(self, 'overfit_callback') and self.overfit_callback and epoch_train_accuracy >= 100.0:
+                print(f"Overfit done at epoch: {epoch}.")
+                break
+            # fmt:on
+
+            if self.checkpoint == "every":
+                self.save_checkpoint()
+            elif self.checkpoint == "best_val":
+                if epoch_val_accuracy > best_epoch_val_accuracy:
+                    best_epoch_val_accuracy = epoch_val_accuracy
+                    self.save_checkpoint(
+                        best_epoch_val_accuracy, save_best_model=True)
+
+            if stop_training:
                 # fmt:off
-                print(f"Epoch: {self.epoch}, train_accuracy: {\
-                    epoch_train_accuracy:.2f}, val_accuracy: {epoch_val_accuracy:.2f}")
-
-                if self.fast_dev_run:
-                    print("Sanity check done with fast dev run!")
-
-                if hasattr(self, 'overfit_callback') and self.overfit_callback and epoch_train_accuracy >= 100.0:
-                    print(f"Overfit done at epoch: {epoch}.")
-                    break
+                print(f"Stoppping training due to early stopping crossing threshold {\
+                    accuracy_diff:.2f}")
                 # fmt:on
+                break
 
-                if self.checkpoint == "every":
-                    self.save_checkpoint()
-                if self.checkpoint == "best_train":
-                    if epoch_train_loss < best_epoch_train_loss:
-                        best_epoch_train_loss = epoch_train_loss
-                        self.save_checkpoint(save_best_model=True)
+        if epoch == self.max_epochs:
+            # fmt:off
+            print(f"Training stopped max_epochs: {self.max_epochs} reached!")
+            # fmt:on
 
-                # Early Stopping
-                stop_training, accuracy_diff = self._earlystopping_callback(
-                    epoch_train_accuracy, epoch_val_accuracy)
-                if stop_training:
-                    # fmt:off
-                    print(f"Stoppping training due to early stopping crossing threshold {\
-                        accuracy_diff:.2f}")
-                    # fmt:on
-                    break
-
-            if epoch == self.max_epochs:
-                print(f"Training stopped max_epochs: {
-                      self.max_epochs} reached!")
-
-        except Exception as e:
-            print(e)
-        finally:
-            if not self.fast_dev_run and self.save_best_model:
-                wandb.log_model(self.save_path, aliases=["best"])
+        if not self.fast_dev_run and self.save_best_model:
+            wandb.log_model(self.save_path, aliases=["best"])
 
     def train(self):
         step_train_losses = []
@@ -164,21 +206,27 @@ class Trainer:
             if self.limit_train_batches and (step > self.limit_train_batches):
                 break
 
+            self.training_step += 1
+
             loss, acc = self.module.training_step(batch)
-            step_train_losses.append(loss.item())
-            step_train_accuracies.append(acc.item())
+            step_train_loss = loss.item()
+            step_train_accuracy = acc.item()
+            step_train_losses.append(step_train_loss)
+            step_train_accuracies.append(step_train_accuracy)
             wandb.log({
-                "step": step,
+                "training_step": self.training_step,
+                "step_train_loss": step_train_loss,
+                "step_train_accuracy": step_train_accuracy
             })
 
             # optimization
-            self.optimizer_func.zero_grad()
+            self.optimizer.zero_grad()
             loss.backward()
-            self.optimizer_func.step()
+            self.optimizer.step()
 
             # lr_scheduler step
-            if self.lr_scheduler:
-                self.lr_scheduler.step()
+            if not self.lr_scheduler_on_epoch:
+                self._lr_scheduler_update(on_epoch=False)
 
         epoch_train_loss = torch.tensor(step_train_losses).mean()
         epoch_train_accuracy = torch.tensor(step_train_accuracies).mean()
@@ -198,12 +246,20 @@ class Trainer:
 
         self.module.model.eval()
         for step, batch in enumerate(val_dataloader):
+            self.validation_step += 1
             if self.limit_val_batches and (step > self.limit_val_batches):
                 break
 
             loss, acc = self.module.validation_step(batch)
-            step_val_losses.append(loss.item())
-            step_val_accuracies.append(acc.item())
+            step_val_loss = loss.item()
+            step_val_accuracy = acc.item()
+            step_val_losses.append(step_val_loss)
+            step_val_accuracies.append(step_val_accuracy)
+            wandb.log({
+                "validation_step": self.validation_step,
+                "step_val_loss": step_val_loss,
+                "step_val_accuracy": step_val_accuracy
+            })
 
         epoch_val_loss = torch.tensor(step_val_losses).mean()
         epoch_val_accuracy = torch.tensor(step_val_accuracies).mean()
@@ -216,21 +272,25 @@ class Trainer:
 
         return epoch_val_loss, epoch_val_accuracy
 
-    def save_checkpoint(self, save_best_model=False):
+    def save_checkpoint(self, val_accuracy=None, save_best_model=False):
         self.save_best_model = save_best_model
         self.checkpoint_path = Path(wandb.run.dir).parent / "checkpoints"
         self.checkpoint_path.mkdir(exist_ok=True)
         if save_best_model:
-            self.save_path = self.checkpoint_path / f"best.pt"
+            self.save_path = self.checkpoint_path / \
+                f"best_val_acc_{val_accuracy:.2f}.pt"
         else:
             self.save_path = self.checkpoint_path / \
                 f"checkpoint-{self.epoch}.pt"
 
-        torch.save({
+        state_dict = {
             "model": self.module.model.state_dict(),
-            "optimizer": self.optimizer_func.state_dict()
+            "optimizer": self.optimizer.state_dict()
+        }
+        if self.lr_scheduler:
+            state_dict["lr_scheduler"] = self.lr_scheduler.state_dict()
 
-        }, self.save_path)
+        torch.save(state_dict, self.save_path)
 
         if not save_best_model:
             wandb.log_model(self.save_path, aliases=[
