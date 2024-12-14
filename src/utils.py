@@ -22,3 +22,14 @@ def accuracy(logits, y):
     accuracy = 100 * ((y_pred == y).sum() / y_pred.shape[0])
 
     return accuracy
+
+
+def load_from_checkpoint(path, model, optimizer, lr_scheduler=None):
+    checkpoint = torch.load(path, weights_only=True)
+    model.load_state_dict(checkpoint["model"])
+    optimizer.load_state_dict(checkpoint["optimizer"])
+
+    if lr_scheduler:
+        lr_scheduler = lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
+
+    return model, optimizer, lr_scheduler

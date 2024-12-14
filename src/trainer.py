@@ -15,6 +15,7 @@ class Trainer:
         logger=None,
         callbacks=[],
         logs_path=None,
+        optimizer=None,
         lr_scheduler=None,
         limit_train_batches=None,
         limit_val_batches=None,
@@ -28,8 +29,10 @@ class Trainer:
         self.module.logger = logger
 
         self.logger = logger
+        self.logger.mode = "offline" if fast_dev_run else "online"
+
         self.logs_path = logs_path
-        self.optimizer_func = module.optimizer()
+        self.optimizer = optimizer
         self.callbacks = callbacks
         self.lr_scheduler = lr_scheduler
         self.limit_train_batches = limit_train_batches
@@ -39,11 +42,6 @@ class Trainer:
         self.num_workers = num_workers
         self.checkpoint = checkpoint
         self.overfit_callback = None
-
-        if self.fast_dev_run:
-            os.environ["WANDB_MODE"] = "offline"
-        else:
-            os.environ["WANDB_MODE"] = "online"
 
     def setup(self):
         self.logger.init()
@@ -146,8 +144,9 @@ class Trainer:
                     break
 
             if epoch == self.max_epochs:
-                print(f"Training stopped max_epochs: {
-                      self.max_epochs} reached!")
+                # fmt:off
+                print(f"Training stopped max_epochs: {self.max_epochs} reached!")
+                # fmt:on
 
         except Exception as e:
             print(e)
@@ -172,12 +171,15 @@ class Trainer:
             })
 
             # optimization
-            self.optimizer_func.zero_grad()
+            self.optimizer.zero_grad()
             loss.backward()
-            self.optimizer_func.step()
+            self.optimizer.step()
 
             # lr_scheduler step
             if self.lr_scheduler:
+                wandb.log({
+                    "lr": self.lr_scheduler.get_last_lr()
+                })
                 self.lr_scheduler.step()
 
         epoch_train_loss = torch.tensor(step_train_losses).mean()
@@ -226,11 +228,14 @@ class Trainer:
             self.save_path = self.checkpoint_path / \
                 f"checkpoint-{self.epoch}.pt"
 
-        torch.save({
+        state_dict = {
             "model": self.module.model.state_dict(),
-            "optimizer": self.optimizer_func.state_dict()
+            "optimizer": self.optimizer.state_dict()
+        }
+        if self.lr_scheduler:
+            state_dict["lr_scheduler"] = self.lr_scheduler.state_dict()
 
-        }, self.save_path)
+        torch.save(state_dict, self.save_path)
 
         if not save_best_model:
             wandb.log_model(self.save_path, aliases=[
