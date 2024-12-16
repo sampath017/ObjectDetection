@@ -1,5 +1,3 @@
-import traceback
-import os
 from colorama import Fore, Style
 import torch
 import wandb
@@ -38,7 +36,7 @@ class Trainer:
         self.optimizer = optimizer
         self.callbacks = callbacks
         self.lr_scheduler = lr_scheduler
-        self.lr_scheduler_on_epoch = lr_scheduler_on_epoch,
+        self.lr_scheduler_on_epoch = lr_scheduler_on_epoch
         self.limit_train_batches = limit_train_batches
         self.limit_val_batches = limit_val_batches
         self.fast_dev_run = fast_dev_run
@@ -65,6 +63,7 @@ class Trainer:
         else:
             self.overfit_callback = self._overfit_callback()
             if self.overfit_callback:
+                self.checkpoint = None
                 if self.overfit_callback.augument_data:
                     train_dataset = self.train_dataloader.dataset
                 else:
@@ -290,6 +289,10 @@ class Trainer:
         if self.lr_scheduler:
             state_dict["lr_scheduler"] = self.lr_scheduler.state_dict()
 
+        # Remove previous saved models
+        for file in self.save_path.parent.iterdir():
+            file.unlink()
+            
         torch.save(state_dict, self.save_path)
 
         if not save_best_model:
