@@ -1,11 +1,12 @@
 import torch.nn.functional as F
 import torch
 from utils import accuracy
-from models import ToyNet, ResNet18
+from models import ToyNet, ResNet18, ResNet9
 
 class QuickModule:
     def __init__(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # self.device = "cpu"
 
     def forward(self, batch):
         self.model = self.model.to(self.device)
@@ -23,7 +24,7 @@ class QuickModule:
 class ResNetModule(QuickModule):
     def __init__(self, toy_model=False):
         super().__init__()
-        self.model = ToyNet() if toy_model else ResNet18()
+        self.model = ToyNet() if toy_model else ResNet9(num_classes=101)
 
     def training_step(self, batch):
         loss, acc = self.forward(batch)

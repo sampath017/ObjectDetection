@@ -3,7 +3,7 @@ from torch import nn
 
 
 class ResNet9(nn.Module):
-    def __init__(self):
+    def __init__(self, num_classes=10):
         super().__init__()
         self.feature_extractor = nn.Sequential(
             ConvBlock(3, 64),
@@ -18,7 +18,7 @@ class ResNet9(nn.Module):
 
         self.classifier = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(512, 10),
+            nn.Linear(512*7*7, num_classes),
         )
 
     def forward(self, x):
@@ -30,7 +30,7 @@ class ResNet9(nn.Module):
 
 
 class ResNet18(nn.Module):
-    def __init__(self):
+    def __init__(self, num_classes):
         super().__init__()
         self.feature_extractor = nn.Sequential(
             ConvBlock(3, 64),
@@ -54,7 +54,7 @@ class ResNet18(nn.Module):
         self.classifier = nn.Sequential(
             nn.Flatten(),
             nn.Linear(512, 256),
-            nn.Linear(256, 10),
+            nn.Linear(256, num_classes),
         )
 
     def forward(self, x):
