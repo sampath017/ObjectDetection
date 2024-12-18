@@ -6,6 +6,7 @@ from pathlib import Path
 from callbacks import OverfitCallback, EarlyStoppingCallback
 import time
 from dataset import MapDataset
+import torch.optim.lr_scheduler as lrs
 
 
 class Trainer:
@@ -17,13 +18,12 @@ class Trainer:
         logs_path=None,
         optimizer=None,
         lr_scheduler=None,
-        lr_scheduler_on_epoch=True,
         limit_train_batches=None,
         limit_val_batches=None,
         fast_dev_run=False,
-        measure_time=False,
+        measure_time=True,
         num_workers=6,
-        checkpoint="every"
+        save_checkpoint_type="every"
     ):
         self.module = module
 
@@ -36,18 +36,22 @@ class Trainer:
         self.optimizer = optimizer
         self.callbacks = callbacks
         self.lr_scheduler = lr_scheduler
-        self.lr_scheduler_on_epoch = lr_scheduler_on_epoch
         self.limit_train_batches = limit_train_batches
         self.limit_val_batches = limit_val_batches
         self.fast_dev_run = fast_dev_run
         self.measure_time = measure_time
         self.num_workers = num_workers
-        self.checkpoint = checkpoint
+        self.save_checkpoint_type = save_checkpoint_type
 
         self.overfit_callback = None
         self.training_step = 0
         self.validation_step = 0
         self._earlystopping_callback()
+
+        self.step_lr_schedulers = [lrs.OneCycleLR]
+        self.epoch_lr_schedulers = []
+
+        print(f"Using device: {module.device}!")
 
     def setup(self):
         self.logger.init()
@@ -63,7 +67,7 @@ class Trainer:
         else:
             self.overfit_callback = self._overfit_callback()
             if self.overfit_callback:
-                self.checkpoint = None
+                self.save_checkpoint_type = None
                 if self.overfit_callback.augument_data:
                     train_dataset = self.train_dataloader.dataset
                 else:
@@ -75,6 +79,19 @@ class Trainer:
                 self.limit_train_batches = self.overfit_callback.limit_train_batches
                 self.limit_val_batches = self.overfit_callback.limit_val_batches
                 self.max_epochs = self.overfit_callback.max_epochs
+
+        # lr_schedular
+        # step lrs
+        for scheduler_class in self.step_lr_schedulers:
+            if isinstance(self.lr_scheduler, scheduler_class):
+                self.lr_scheduler_on_epoch = False
+                break
+
+        # epoch lrs
+        for scheduler_class in self.epoch_lr_schedulers:
+            if isinstance(self.lr_scheduler, scheduler_class):
+                self.lr_scheduler_on_epoch = True
+                break
 
     def _overfit_callback(self):
         for callback in self.callbacks:
@@ -115,7 +132,8 @@ class Trainer:
                 "lr": self.current_lr
             })
 
-        self.lr_scheduler.step()
+        if self.lr_scheduler:
+            self.lr_scheduler.step()
 
     def fit(self, train_dataloader, val_dataloader):
         # setup
@@ -173,9 +191,9 @@ class Trainer:
                 break
             # fmt:on
 
-            if self.checkpoint == "every":
+            if self.save_checkpoint_type == "every":
                 self.save_checkpoint()
-            elif self.checkpoint == "best_val":
+            elif self.save_checkpoint_type == "best_val":
                 if epoch_val_accuracy > best_epoch_val_accuracy:
                     best_epoch_val_accuracy = epoch_val_accuracy
                     self.save_checkpoint(
@@ -292,7 +310,7 @@ class Trainer:
         # Remove previous saved models
         for file in self.save_path.parent.iterdir():
             file.unlink()
-            
+
         torch.save(state_dict, self.save_path)
 
         if not save_best_model:

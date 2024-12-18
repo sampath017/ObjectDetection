@@ -24,7 +24,7 @@ class QuickModule:
 class ResNetModule(QuickModule):
     def __init__(self, toy_model=False):
         super().__init__()
-        self.model = ToyNet() if toy_model else ResNet9(num_classes=101)
+        self.model = ToyNet() if toy_model else ResNet9(num_classes=100)
 
     def training_step(self, batch):
         loss, acc = self.forward(batch)

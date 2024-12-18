@@ -8,17 +8,19 @@ class ResNet9(nn.Module):
         self.feature_extractor = nn.Sequential(
             ConvBlock(3, 64),
             ConvBlock(64, 128, max_pool=True),
+            nn.Dropout(),
             ResBlock(128),
 
             ConvBlock(128, 256, max_pool=True),
             ConvBlock(256, 512, max_pool=True),
+            nn.Dropout(),
             ResBlock(512),
             nn.MaxPool2d(kernel_size=4)
         )
 
         self.classifier = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(512*7*7, num_classes),
+            nn.Linear(512, num_classes),
         )
 
     def forward(self, x):
@@ -48,13 +50,14 @@ class ResNet18(nn.Module):
             ConvBlock(512, 512),
             ConvBlock(512, 512),
             ResBlock(512),
+
+            ConvBlock(512, 512, last_block=True),
             nn.MaxPool2d(kernel_size=4)
         )
 
         self.classifier = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(512, 256),
-            nn.Linear(256, num_classes),
+            nn.Linear(512, num_classes),
         )
 
     def forward(self, x):
@@ -103,29 +106,8 @@ class ResBlock(nn.Module):
     ):
         super().__init__()
         self.block = nn.Sequential(
-            # Block 1
-            nn.Conv2d(
-                in_channels=channels,
-                out_channels=channels,
-                kernel_size=(3, 3),
-                stride=1,
-                padding=1,
-                bias=False
-            ),
-            nn.BatchNorm2d(num_features=channels),
-            nn.ReLU(),
-
-            # Block 2
-            nn.Conv2d(
-                in_channels=channels,
-                out_channels=channels,
-                kernel_size=(3, 3),
-                stride=1,
-                padding=1,
-                bias=True if last_block else False
-            ),
-            nn.BatchNorm2d(num_features=channels),
-            nn.ReLU(),
+            ConvBlock(channels, channels),
+            ConvBlock(channels, channels)
         )
 
     def forward(self, x):
