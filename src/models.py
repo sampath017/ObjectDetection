@@ -18,7 +18,7 @@ class ResNet9(nn.Module):
 
         self.classifier = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(512*7*7, num_classes),
+            nn.Linear(512, num_classes),
         )
 
     def forward(self, x):
@@ -26,7 +26,6 @@ class ResNet9(nn.Module):
         logits = self.classifier(features)
 
         return logits
-
 
 
 class ResNet18(nn.Module):
