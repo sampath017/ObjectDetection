@@ -116,8 +116,6 @@ class Trainer:
         return stop_training, accuracy_diff
 
     def _lr_scheduler_update(self, on_epoch=True):
-        self.current_lr = self.lr_scheduler.get_last_lr()[0]
-
         if on_epoch:
             wandb.log({
                 "epoch": self.epoch,

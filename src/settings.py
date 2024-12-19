@@ -25,7 +25,7 @@ optimizer = {
 #     "max_lr": 0.01,
 # }
 
-lr_scheduler = None
+lr_scheduler = "default"
 
 wandb_offline = False
 fast_dev_run = False
