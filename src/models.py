@@ -8,10 +8,12 @@ class ResNet9(nn.Module):
         self.feature_extractor = nn.Sequential(
             ConvBlock(3, 64),
             ConvBlock(64, 128, max_pool=True),
+            nn.Dropout(),
             ResBlock(128),
 
             ConvBlock(128, 256, max_pool=True),
             ConvBlock(256, 512, max_pool=True),
+            nn.Dropout(),
             ResBlock(512),
             nn.MaxPool2d(kernel_size=4)
         )
@@ -33,27 +35,28 @@ class ResNet18(nn.Module):
         super().__init__()
         self.feature_extractor = nn.Sequential(
             ConvBlock(3, 64),
-            ConvBlock(64, 128, max_pool=True),
+            ConvBlock(64, 128),
             ResBlock(128),
 
-            ConvBlock(128, 256, max_pool=True),
-            ConvBlock(256, 512, max_pool=True),
+            ConvBlock(128, 256, stride=2),
+            ConvBlock(256, 512),
             ResBlock(512),
 
-            ConvBlock(512, 512),
+            ConvBlock(512, 512, stride=2),
             ConvBlock(512, 512),
             ResBlock(512),
 
-            ConvBlock(512, 512),
+            ConvBlock(512, 512, stride=2),
             ConvBlock(512, 512),
             ResBlock(512),
-            nn.MaxPool2d(kernel_size=4)
+
+            ConvBlock(512, 512, last_block=True),
+            nn.AdaptiveAvgPool2d(output_size=(1, 1))
         )
 
         self.classifier = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(512, 256),
-            nn.Linear(256, num_classes),
+            nn.Linear(512, num_classes),
         )
 
     def forward(self, x):
@@ -61,6 +64,7 @@ class ResNet18(nn.Module):
         logits = self.classifier(features)
 
         return logits
+
 
 class ResNet56(nn.Module):
     def __init__(self, num_classes):
@@ -89,15 +93,15 @@ class ResNet56(nn.Module):
             ConvBlock(512, 512),
             ConvBlock(512, 512),
             ResBlock(512),
-            
+
             ConvBlock(512, 512),
             ConvBlock(512, 512),
             ResBlock(512),
-            
+
             ConvBlock(512, 512),
             ConvBlock(512, 512),
             ResBlock(512),
-            
+
             ConvBlock(512, 512),
             ConvBlock(512, 512),
             ResBlock(512),
@@ -121,7 +125,7 @@ class ResNet56(nn.Module):
             ConvBlock(512, 512, max_pool=True),
             ConvBlock(512, 512),
             ResBlock(512),
-            
+
             nn.MaxPool2d(kernel_size=4)
         )
 
@@ -143,6 +147,7 @@ class ConvBlock(nn.Module):
         self,
         in_channels=3,
         out_channels=64,
+        stride=1,
         max_pool=False,
         last_block=False
     ):
@@ -152,12 +157,12 @@ class ConvBlock(nn.Module):
                 in_channels=in_channels,
                 out_channels=out_channels,
                 kernel_size=(3, 3),
-                stride=1,
                 padding=1,
+                stride=stride,
                 bias=True if last_block else False
             ),
             nn.BatchNorm2d(num_features=out_channels),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
         ]
 
         if max_pool:
@@ -173,33 +178,11 @@ class ResBlock(nn.Module):
     def __init__(
         self,
         channels=3,
-        last_block=False,
     ):
         super().__init__()
         self.block = nn.Sequential(
-            # Block 1
-            nn.Conv2d(
-                in_channels=channels,
-                out_channels=channels,
-                kernel_size=(3, 3),
-                stride=1,
-                padding=1,
-                bias=False
-            ),
-            nn.BatchNorm2d(num_features=channels),
-            nn.ReLU(),
-
-            # Block 2
-            nn.Conv2d(
-                in_channels=channels,
-                out_channels=channels,
-                kernel_size=(3, 3),
-                stride=1,
-                padding=1,
-                bias=True if last_block else False
-            ),
-            nn.BatchNorm2d(num_features=channels),
-            nn.ReLU(),
+            ConvBlock(channels, channels),
+            ConvBlock(channels, channels)
         )
 
     def forward(self, x):
@@ -209,11 +192,13 @@ class ResBlock(nn.Module):
 
 
 class ToyNet(nn.Module):
-    def __init__(self):
+    def __init__(self, num_classes=100):
         super().__init__()
-        self.param = nn.Parameter(torch.tensor(0.0))
+        self.num_classes = num_classes
+        self.param = nn.Parameter(torch.tensor(1.0))
 
     def forward(self, x):
-        logits = torch.empty(10, dtype=torch.float)
+        logits = self.param * \
+            torch.empty((x.shape[0], self.num_classes), dtype=torch.float)
 
         return logits

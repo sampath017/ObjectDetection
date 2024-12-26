@@ -1,8 +1,8 @@
-from models import ToyNet, ResNet18, ResNet9
 import torch.nn.functional as F
 import torch
 from utils import accuracy
 from models import ToyNet, ResNet18, ResNet9, ResNet56
+from temp import resnet18
 
 
 class QuickModule:
@@ -24,9 +24,14 @@ class QuickModule:
 
 
 class ResNetModule(QuickModule):
-    def __init__(self, toy_model=False):
+    def __init__(self, model=None, toy_model=False):
         super().__init__()
-        self.model = ToyNet() if toy_model else ResNet56(num_classes=100)
+        if model:
+            self.model = model
+        elif toy_model:
+            self.model = ToyNet()
+        else:
+            self.model = ResNet18(num_classes=100)
 
     def training_step(self, batch):
         loss, acc = self.forward(batch)

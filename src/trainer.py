@@ -18,10 +18,11 @@ class Trainer:
         logs_path=None,
         optimizer=None,
         lr_scheduler=None,
+        limit_batches=None,
         limit_train_batches=None,
         limit_val_batches=None,
         fast_dev_run=False,
-        measure_time=False,
+        measure_time=True,
         num_workers=6,
         save_checkpoint_type="every"
     ):
@@ -34,11 +35,14 @@ class Trainer:
 
         self.logs_path = logs_path
         self.optimizer = optimizer
-        self.optimizer = optimizer
         self.callbacks = callbacks
         self.lr_scheduler = lr_scheduler
-        self.limit_train_batches = limit_train_batches
-        self.limit_val_batches = limit_val_batches
+        if limit_batches is not None:
+            self.limit_train_batches = limit_batches
+            self.limit_val_batches = limit_batches
+        else:
+            self.limit_train_batches = limit_train_batches
+            self.limit_val_batches = limit_val_batches
         self.fast_dev_run = fast_dev_run
         self.measure_time = measure_time
         self.num_workers = num_workers
@@ -82,17 +86,20 @@ class Trainer:
                 self.max_epochs = self.overfit_callback.max_epochs
 
         # lr_schedular
-        # step lrs
-        for scheduler_class in self.step_lr_schedulers:
-            if isinstance(self.lr_scheduler, scheduler_class):
-                self.lr_scheduler_on_epoch = False
-                break
+        if self.lr_scheduler == None:
+            self.lr_scheduler_on_epoch = False
+        else:
+            # step lrs
+            for scheduler_class in self.step_lr_schedulers:
+                if isinstance(self.lr_scheduler, scheduler_class):
+                    self.lr_scheduler_on_epoch = False
+                    break
 
-        # epoch lrs
-        for scheduler_class in self.epoch_lr_schedulers:
-            if isinstance(self.lr_scheduler, scheduler_class):
-                self.lr_scheduler_on_epoch = True
-                break
+            # epoch lrs
+            for scheduler_class in self.epoch_lr_schedulers:
+                if isinstance(self.lr_scheduler, scheduler_class):
+                    self.lr_scheduler_on_epoch = True
+                    break
 
     def _overfit_callback(self):
         for callback in self.callbacks:
@@ -117,99 +124,108 @@ class Trainer:
         return stop_training, accuracy_diff
 
     def _lr_scheduler_update(self, on_epoch=True):
-        if on_epoch:
-            wandb.log({
-                "epoch": self.epoch,
-                "lr": self.current_lr
-            })
+        if self.lr_scheduler:
+            if on_epoch:
+                wandb.log({
+                    "epoch": self.epoch,
+                    "lr": self.current_lr
+                })
+            else:
+                wandb.log({
+                    "training_step": self.training_step,
+                    "lr": self.current_lr
+                })
+
+            self.lr_scheduler.step()
         else:
             wandb.log({
                 "training_step": self.training_step,
                 "lr": self.current_lr
             })
 
-        if self.lr_scheduler:
-            self.lr_scheduler.step()
-
     def fit(self, train_dataloader, val_dataloader):
-        # setup
-        self.train_dataloader = train_dataloader
-        self.val_dataloader = val_dataloader
-        self.setup()
-        best_epoch_val_accuracy = 0.0
+        try:
+            # setup
+            self.train_dataloader = train_dataloader
+            self.val_dataloader = val_dataloader
+            self.setup()
+            best_epoch_val_accuracy = 0.0
 
-        for epoch in range(self.max_epochs):
-            self.current_lr = self.optimizer.param_groups[0]['lr']
-            measure_time_bool = self.measure_time and epoch == 0
-            self.epoch = epoch
+            for epoch in range(self.max_epochs):
+                self.current_lr = self.optimizer.param_groups[0]['lr']
+                measure_time_bool = self.measure_time and epoch == 0
+                self.epoch = epoch
 
-            # Train
-            if measure_time_bool:
-                start_time = time.time()
-            epoch_train_loss, epoch_train_accuracy = self.train()
-            if measure_time_bool:
-                end_time = time.time()
+                # Train
+                if measure_time_bool:
+                    start_time = time.time()
+                epoch_train_loss, epoch_train_accuracy = self.train()
+                if measure_time_bool:
+                    end_time = time.time()
 
-            # lr_scheduler step
-            if self.lr_scheduler and self.lr_scheduler_on_epoch:
-                self._lr_scheduler_update(on_epoch=True)
+                # lr_scheduler step
+                if self.lr_scheduler_on_epoch:
+                    self._lr_scheduler_update(on_epoch=True)
 
-            if measure_time_bool:
-                # type: ignore
-                print(f"Time per epoch: {end_time-start_time:.2f} seconds")
+                if measure_time_bool:
+                    # type: ignore
+                    print(f"Time per epoch: {end_time-start_time:.2f} seconds")
 
-            if not self.overfit_callback:
-                epoch_val_loss, epoch_val_accuracy = self.val(
-                    val_dataloader)
-            else:
-                epoch_val_accuracy = torch.inf
+                if not self.overfit_callback:
+                    epoch_val_loss, epoch_val_accuracy = self.val(
+                        val_dataloader)
+                else:
+                    epoch_val_accuracy = torch.inf
 
-            # Early Stopping
-            stop_training, accuracy_diff = self._earlystopping_callback_check(
-                epoch_train_accuracy, epoch_val_accuracy)
+                # Early Stopping
+                stop_training, accuracy_diff = self._earlystopping_callback_check(
+                    epoch_train_accuracy, epoch_val_accuracy)
 
-            # Print
-            # fmt:off
-            if self.early_stopping_callback:
-                color = Fore.RED if self.early_stopping_callback.counted else ""
-                reset = Style.RESET_ALL if color else ""  
-            else:
-                color = ""
-                reset = ""
-
-            print(f"Epoch: {self.epoch}, train_accuracy: {\
-                epoch_train_accuracy:.2f}, val_accuracy: {color}{epoch_val_accuracy:.2f}{reset}, lr: {self.current_lr:.4f}")
-
-            if self.fast_dev_run:
-                print("Sanity check done with fast dev run!")
-
-            if hasattr(self, 'overfit_callback') and self.overfit_callback and epoch_train_accuracy >= 100.0:
-                print(f"Overfit done at epoch: {epoch}.")
-                break
-            # fmt:on
-
-            if self.save_checkpoint_type == "every":
-                self.save_checkpoint()
-            elif self.save_checkpoint_type == "best_val":
-                if epoch_val_accuracy > best_epoch_val_accuracy:
-                    best_epoch_val_accuracy = epoch_val_accuracy
-                    self.save_checkpoint(
-                        best_epoch_val_accuracy, save_best_model=True)
-
-            if stop_training:
+                # Print
                 # fmt:off
-                print(f"Stoppping training due to early stopping crossing threshold {\
-                    accuracy_diff:.2f}")
+                if self.early_stopping_callback:
+                    color = Fore.RED if self.early_stopping_callback.counted else ""
+                    reset = Style.RESET_ALL if color else ""  
+                else:
+                    color = ""
+                    reset = ""
+
+                print(f"Epoch: {self.epoch}, train_accuracy: {\
+                    epoch_train_accuracy:.2f}, val_accuracy: {color}{epoch_val_accuracy:.2f}{reset}, lr: {self.current_lr:.4f}")
+
+                if self.fast_dev_run:
+                    print("Sanity check done with fast dev run!")
+
+                if hasattr(self, 'overfit_callback') and self.overfit_callback and epoch_train_accuracy >= 100.0:
+                    print(f"Overfit done at epoch: {epoch}.")
+                    break
                 # fmt:on
-                break
 
-        if epoch == self.max_epochs:
-            # fmt:off
-            print(f"Training stopped max_epochs: {self.max_epochs} reached!")
-            # fmt:on
+                if self.save_checkpoint_type == "every":
+                    self.save_checkpoint()
+                elif self.save_checkpoint_type == "best_val":
+                    if epoch_val_accuracy > best_epoch_val_accuracy:
+                        best_epoch_val_accuracy = epoch_val_accuracy
+                        self.save_checkpoint(
+                            best_epoch_val_accuracy, save_best_model=True)
 
-        if not self.fast_dev_run and self.save_best_model:
-            wandb.log_model(self.save_path, aliases=["best"])
+                if stop_training:
+                    # fmt:off
+                    print(f"Stoppping training due to early stopping crossing threshold {\
+                        accuracy_diff:.2f}")
+                    # fmt:on
+                    break
+
+            if epoch == self.max_epochs:
+                # fmt:off
+                print(f"Training stopped max_epochs: {self.max_epochs} reached!")
+                # fmt:on
+
+        except KeyboardInterrupt:
+            raise KeyboardInterrupt
+        finally:
+            if not self.fast_dev_run and self.save_best_model and self.epoch > 0:
+                wandb.log_model(self.save_path, aliases=["best"])
 
     def train(self):
         step_train_losses = []
@@ -235,12 +251,11 @@ class Trainer:
 
             # optimization
             self.optimizer.zero_grad()
-            self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
 
             # lr_scheduler step
-            if self.lr_scheduler and not self.lr_scheduler_on_epoch:
+            if not self.lr_scheduler_on_epoch:
                 self._lr_scheduler_update(on_epoch=False)
 
         epoch_train_loss = torch.tensor(step_train_losses).mean()
