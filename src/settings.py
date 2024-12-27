@@ -6,7 +6,7 @@ model = {
 }
 
 dataset = {
-    "name": "CIFAR100",
+    "name": "CIFAR10",
     "batch_size": 512,
     "train_split": 0.7,
     "val_split": 0.3
@@ -15,8 +15,8 @@ dataset = {
 max_epochs = 50
 
 optimizer = {
-    "name": "Adam",
-    "weight_decay": None
+    "name": "AdamW",
+    "weight_decay": 0.01
 }
 
 # lr_scheduler = None
@@ -25,7 +25,13 @@ lr_scheduler = {
     "max_lr": 0.01,
 }
 
-test_run = False
+# transfer_learning = None
+transfer_learning = {
+    "freeze_fe": False,
+    "change_fc": True
+}
+
+test_run = True
 limit_batches = None
-wandb_offline = False
+wandb_offline = True
 fast_dev_run = False

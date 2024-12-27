@@ -1,1 +1,0 @@
-106 MB batch_size = 1024
