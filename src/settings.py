@@ -34,4 +34,4 @@ transfer_learning = {
 limit_batches = None
 test_run = False
 wandb_offline = False
-fast_dev_run = False
+fast_dev_run = True
