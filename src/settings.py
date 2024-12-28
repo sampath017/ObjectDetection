@@ -27,11 +27,11 @@ lr_scheduler = {
 
 # transfer_learning = None
 transfer_learning = {
-    "freeze_fe": False,
+    "freeze_fe": True,
     "change_fc": True
 }
 
-test_run = True
 limit_batches = None
-wandb_offline = True
+test_run = False
+wandb_offline = False
 fast_dev_run = False
