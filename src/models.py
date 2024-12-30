@@ -2,34 +2,6 @@ import torch
 from torch import nn
 
 
-class ResNet9(nn.Module):
-    def __init__(self, num_classes=10):
-        super().__init__()
-        self.feature_extractor = nn.Sequential(
-            ConvBlock(3, 64),
-            ConvBlock(64, 128, max_pool=True),
-            nn.Dropout(),
-            ResBlock(128),
-
-            ConvBlock(128, 256, max_pool=True),
-            ConvBlock(256, 512, max_pool=True),
-            nn.Dropout(),
-            ResBlock(512),
-            nn.MaxPool2d(kernel_size=4)
-        )
-
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(512, num_classes),
-        )
-
-    def forward(self, x):
-        features = self.feature_extractor(x)
-        logits = self.classifier(features)
-
-        return logits
-
-
 class ResNet18(nn.Module):
     def __init__(self, num_classes):
         super().__init__()
@@ -57,82 +29,6 @@ class ResNet18(nn.Module):
         self.classifier = nn.Sequential(
             nn.Flatten(),
             nn.Linear(512, num_classes),
-        )
-
-    def forward(self, x):
-        features = self.feature_extractor(x)
-        logits = self.classifier(features)
-
-        return logits
-
-
-class ResNet56(nn.Module):
-    def __init__(self, num_classes):
-        super().__init__()
-        self.feature_extractor = nn.Sequential(
-            ConvBlock(3, 64),
-            ConvBlock(64, 128),
-            ResBlock(128),
-
-            ConvBlock(128, 256),
-            ConvBlock(256, 512),
-            ResBlock(512),
-
-            ConvBlock(512, 512),
-            ConvBlock(512, 512),
-            ResBlock(512),
-
-            ConvBlock(512, 512),
-            ConvBlock(512, 512),
-            ResBlock(512),
-
-            ConvBlock(512, 512),
-            ConvBlock(512, 512),
-            ResBlock(512),
-
-            ConvBlock(512, 512),
-            ConvBlock(512, 512),
-            ResBlock(512),
-
-            ConvBlock(512, 512),
-            ConvBlock(512, 512),
-            ResBlock(512),
-
-            ConvBlock(512, 512),
-            ConvBlock(512, 512),
-            ResBlock(512),
-
-            ConvBlock(512, 512),
-            ConvBlock(512, 512),
-            ResBlock(512),
-
-            ConvBlock(512, 512),
-            ConvBlock(512, 512),
-            ResBlock(512),
-
-            ConvBlock(512, 512),
-            ConvBlock(512, 512),
-            ResBlock(512),
-
-            ConvBlock(512, 512, max_pool=True),
-            ConvBlock(512, 512),
-            ResBlock(512),
-
-            ConvBlock(512, 512, max_pool=True),
-            ConvBlock(512, 512),
-            ResBlock(512),
-
-            ConvBlock(512, 512, max_pool=True),
-            ConvBlock(512, 512),
-            ResBlock(512),
-
-            nn.MaxPool2d(kernel_size=4)
-        )
-
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(512, 256),
-            nn.Linear(256, num_classes),
         )
 
     def forward(self, x):

@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "Imageclassification"
+name = "ObjectDetection"
 version = "0.1.0"
 description = ""
 authors = ["sampath <118274231+sampath017@users.noreply.github.com>"]
@@ -17,7 +17,7 @@ wandb = "^0.18.3"
 autopep8 = "^2.3.1"
 colorama = "^0.4.6"
 torchinfo = "^1.8.0"
-quickai = {git = "https://github.com/sampath017/quickai.git"}
+quickai = { git = "https://github.com/sampath017/quickai.git" }
 
 [build-system]
 requires = ["poetry-core"]

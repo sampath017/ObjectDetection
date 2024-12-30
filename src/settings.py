@@ -1,4 +1,4 @@
-project_name = "ImageClassification"
+project_name = "ObjectDetection"
 
 model = {
     "name": "ResNet18",
@@ -6,8 +6,8 @@ model = {
 }
 
 dataset = {
-    "name": "CIFAR10",
-    "batch_size": 512,
+    "name": "VOCDetection",
+    "batch_size": 256,
     "train_split": 0.7,
     "val_split": 0.3
 }
@@ -27,7 +27,7 @@ lr_scheduler = {
 
 # transfer_learning = None
 transfer_learning = {
-    "freeze_fe": True,
+    "freeze_fe": False,
     "change_fc": True
 }
 

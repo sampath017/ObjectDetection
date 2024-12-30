@@ -1,6 +1,4 @@
-import torch.nn.functional as F
-from utils import accuracy
-from models import ToyNet, ResNet18, ResNet9, ResNet56
+from models import ToyNet, ResNet18
 from quickai.module import QuickModule
 
 
