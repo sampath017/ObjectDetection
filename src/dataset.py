@@ -50,6 +50,7 @@ class ObjectDetectionDataset(Dataset):
         # Create the class_to_idx dictionary
         self.class_to_idx = {cls_name: idx for idx,
                              cls_name in enumerate(classes)}
+        self.idx_to_class = {i: c for c, i in self.class_to_idx.items()}
 
     def __getitem__(self, index):
         image = self.single_object_images[index][0]

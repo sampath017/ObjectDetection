@@ -7,7 +7,7 @@ model = {
 
 dataset = {
     "name": "VOCDetection",
-    "batch_size": 256,
+    "batch_size": 32,
     "train_split": 0.7,
     "val_split": 0.3
 }
@@ -25,13 +25,13 @@ lr_scheduler = {
     "max_lr": 0.01,
 }
 
-# transfer_learning = None
-transfer_learning = {
-    "freeze_fe": False,
-    "change_fc": True
-}
+transfer_learning = None
+# transfer_learning = {
+#     "freeze_fe": False,
+#     "change_fc": False
+# }
 
 limit_batches = None
 test_run = False
 wandb_offline = False
-fast_dev_run = True
+fast_dev_run = False
